@@ -50,7 +50,7 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     total_affordable = as.numeric(total_affordable),
     incentive_name=replace(incentive_name, incentive_name=="HFA Revenue Bond Issuance", "HFA Revenue Bond")
   ) %>% 
-  filter(!is.na(total_affordable) && total_affordable > 0) %>% 
+  filter(!is.na(total_affordable)) %>% 
   # Standardizing quadrant parts of address 
   mutate_if(
     is.character, 
@@ -106,7 +106,7 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
     investment_address = str_to_upper(investment_address),
     total_units = as.numeric(total_units)
   ) %>% 
-  filter(!is.na(total_units) && total_units > 0) %>% 
+  filter(!is.na(total_units)) %>% 
   mutate_if(
     is.character, 
     str_replace_all, 
@@ -134,7 +134,36 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
 
 affordable_proj_market_rate$investment_address <- str_remove_all(affordable_proj_market_rate$investment_address, "[,.]")
 
+```
 
+```{r}
+
+# trying to make a data set with projects/investment_address as unit of observation
+# but also want to preserve each incentive_name that was used for each project
+
+# I should just ask how to do this
+
+total_proj_data <- dc_housing_investment %>% 
+  group_by(investment_address) %>% 
+  summarize(total_proj_investment = sum(incentive_amount))
+
+dc_housing_investment <- 
+  left_join(dc_housing_investment, total_proj_data, by = "investment_address")
+
+for (row in 1:nrow(dc_housing_investment)) {
+  if(duplicated(dc_housing_investment$investment_address[row])) {
+    # this is going to be complicated, there has to be a better way
+    for(obs in 1:nrow(dc_housing_investment)) {
+      # yeah definitely not the right way to do this
+    }
+  }
+
+}
+
+
+```
+
+```{r}
 # I don't think this is actually doing to work because it looks like there are multiple 
 # entrees for some addresses in the second data set
 # Or it might work but might need additional maneuvering, might be easier to use MAR
@@ -176,16 +205,6 @@ dc_housing_investment <- dc_housing_investment %>%
     ami_60_efficiency = if_else(ami_60_ratio > 0, incentive_amount/ami_60_ratio, 0),
     ami_80_efficiency = if_else(ami_80_ratio > 0, incentive_amount/ami_80_ratio, 0),
     )
-
-# Also probably a more efficient way to do this, but this removes any economic development incentives that did not produce any affordable housing units across the data set
-min_affordable_units <- dc_housing_investment %>% 
-  group_by(incentive_name) %>% 
-  summarize(incentive_total_affordable = sum(total_affordable_ratio, na.rm = TRUE)) %>% 
-  filter(incentive_total_affordable > 0) %>% 
-  pull(incentive_name)
-
-dc_housing_investment <- dc_housing_investment %>% 
-  filter(incentive_name %in% min_affordable_units)
 
 # Looking to pull in data on market rate housing units
 ```
