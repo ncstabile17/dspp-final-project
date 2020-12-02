@@ -150,15 +150,7 @@ total_proj_data <- dc_housing_investment %>%
 dc_housing_investment <- 
   left_join(dc_housing_investment, total_proj_data, by = "investment_address")
 
-for (row in 1:nrow(dc_housing_investment)) {
-  if(duplicated(dc_housing_investment$investment_address[row])) {
-    # this is going to be complicated, there has to be a better way
-    for(obs in 1:nrow(dc_housing_investment)) {
-      # yeah definitely not the right way to do this
-    }
-  }
 
-}
 
 
 ```
