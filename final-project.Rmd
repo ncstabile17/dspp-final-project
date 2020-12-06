@@ -8,7 +8,7 @@ output: html_document
 
 **Data Author:** Office of the Deputy Mayor for Planning and Economic Development (DMPED)
 
-**Github Repo:** [DSPP Assignment 04](https://github.com/ncstabile17/dspp-assignment04)
+**Github Repo:** [DSPP Final Project](https://github.com/ncstabile17/dspp-final-project)
 
 This data set pulls together economic development investments from across a variety of agencies and programs in the DC government for FY15-19. The data set was created by DMPED as required by the Economic Development Return on Investment Accountability Amendment Act of 2018. Fore more information see DMPED's [FY19 Economic Development Return on Investment Accountability Report](https://dmped.dc.gov/sites/default/files/dc/sites/dmped/publication/attachments/FY19%20ED%20Return%20on%20Investment%20Accountability%20Report.pdf).
 
@@ -93,18 +93,34 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     str_replace_all, 
     pattern = "PLACE", 
     replacement = "PL"
+    ) %>% 
+  mutate_if(
+    is.character, 
+    str_replace_all, 
+    pattern = "AVENUE", 
+    replacement = "AVE"
     )
 
-dc_housing_investment$investment_address <- str_remove_all(dc_housing_investment$investment_address, "[,.]") 
+# Removing commas and periods from addresses for consistency
+dc_housing_investment$investment_address <- str_remove_all(dc_housing_investment$investment_address, "[,.]")
 
+```
+
+```{r}
+
+# Doing similar importing and cleaning for additional data that has market rate units
 affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.csv") %>% 
   rename(
     investment_address = `Address`,
-    total_units = `Total Units`
+    total_units = `Total Units`,
+    invest_amount = `Loan/Grant Amount`,
+    lihtc_amount = `LIHTC Allocation`,
   ) %>%
   mutate(
     investment_address = str_to_upper(investment_address),
-    total_units = as.numeric(total_units)
+    total_units = as.numeric(total_units),
+    invest_amount = as.numeric(gsub('[\\$,]', '', invest_amount)),
+    lihtc_amount = as.numeric(gsub('[\\$,]', '', lihtc_amount))
   ) %>% 
   filter(!is.na(total_units)) %>% 
   mutate_if(
@@ -130,6 +146,30 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
     str_replace_all, 
     pattern = "SOUTHWEST", 
     replacement = "SW"
+    ) %>% 
+  mutate_if(
+    is.character, 
+    str_replace_all, 
+    pattern = "STREET", 
+    replacement = "ST"
+    ) %>% 
+  mutate_if(
+    is.character, 
+    str_replace_all, 
+    pattern = "ROAD", 
+    replacement = "RD"
+    ) %>% 
+  mutate_if(
+    is.character, 
+    str_replace_all, 
+    pattern = "PLACE", 
+    replacement = "PL"
+    ) %>% 
+  mutate_if(
+    is.character, 
+    str_replace_all, 
+    pattern = "AVENUE", 
+    replacement = "AVE"
     )
 
 affordable_proj_market_rate$investment_address <- str_remove_all(affordable_proj_market_rate$investment_address, "[,.]")
