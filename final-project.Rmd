@@ -24,8 +24,16 @@ library(scales)
 ### Data Import and Cleaning
 ```{r warning = FALSE, message = FALSE, results = FALSE}
 
-# Making the variable names easier to work with 
+# Removing unneeded variables and making the variable names easier to work with 
 dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>% 
+  select(-`Is recipient in compliance with District resident employment requirements?`, 
+         -`Amenity Produced or Enhanced`,
+         -`Affordable Housing Compliance?  (Covenanted)`,
+         -`CBE Compliant?`,
+         -`Additional Incentive Benefits`,
+         -`Notes`,
+         -`Incentive Type`,
+         -`Agency`) %>% 
   rename(
     year = `FY`,
     incentive_name = `Incentive Name`,
@@ -38,6 +46,8 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     ami_60 = `60% AMI`,
     ami_80 = `80% AMI`,
     total_affordable = `Total Affordable Units Produced or Preserved`,
+    dc_residents_employed = `Number of District Residents Employed`,
+    num_cbes = `Number of CBEs`
     ) %>% 
   # Ensuring variables are consistent and converting to numeric
   # Note that the "HFA Revenue Bond Issuance" was renamed to "HFA Revenue Bond" in 2019 so this code makes all years consistent
@@ -108,8 +118,11 @@ dc_housing_investment$investment_address <- str_remove_all(dc_housing_investment
 
 ```{r}
 
-# Doing similar importing and cleaning for additional data that has market rate units
+# Doing similar importing and cleaning for additional project data that has market rate unit data
 affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.csv") %>% 
+  select(-`Projected or Actual Construction Completion Date`,
+         -`External Project Website`,
+         -`Project Type/Scope`) %>% 
   rename(
     investment_address = `Address`,
     total_units = `Total Units`,
