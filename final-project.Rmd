@@ -45,7 +45,7 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     ami_50 = `50% AMI`,
     ami_60 = `60% AMI`,
     ami_80 = `80% AMI`,
-    total_affordable = `Total Affordable Units Produced or Preserved`,
+    total_dmped_affordable = `Total Affordable Units Produced or Preserved`,
     dc_residents_employed = `Number of District Residents Employed`,
     num_cbes = `Number of CBEs`
     ) %>% 
@@ -57,7 +57,7 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     ami_50 = as.numeric(ami_50),
     ami_60 = as.numeric(ami_60),
     ami_80 = as.numeric(ami_80),
-    total_affordable = as.numeric(total_affordable),
+    total_dmped_affordable = as.numeric(total_dmped_affordable),
     incentive_name=replace(incentive_name, incentive_name=="HFA Revenue Bond Issuance", "HFA Revenue Bond")
   ) %>% 
   # Standardizing quadrant parts of address 
@@ -130,15 +130,17 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
     ami_0_30 = `0-30% AMI units`,
     ami_31_50 = `31-50% AMI Units`,
     ami_51_80 = `51-80% AMI Units`,
-    market_rate_ami_81 = `81%+ AMI / Market Rate`,
-    affordable_units = `Affordable Units`,
+    ami_81 = `81%+ AMI / Market Rate`,
+    total_dhcd_affordable = `Affordable Units`,
     psh_units = `PSH Units`
   ) %>%
   mutate(
     investment_address = str_to_upper(investment_address),
+    market_rate_units = total_units - total_dhcd_affordable,
     total_units = as.numeric(total_units),
     loan_grant_amount = replace_na(as.numeric(gsub('[\\$,]', '', loan_grant_amount)), 0),
-    lihtc_amount = replace_na(as.numeric(gsub('[\\$,]', '', lihtc_amount)), 0)
+    lihtc_amount = replace_na(as.numeric(gsub('[\\$,]', '', lihtc_amount)), 0),
+    total_investment = lihtc_amount + loan_grant_amount
   ) %>% 
   filter(!is.na(total_units)) %>% 
   mutate_if(
@@ -200,24 +202,17 @@ affordable_proj_market_rate$investment_address <- str_remove_all(affordable_proj
 
 investment_by_project <- affordable_proj_market_rate %>% 
   group_by(investment_address) %>% 
-  summarize(total_loan_grant_amount = sum(loan_grant_amount))
+  summarize(total_dhcd_investment = sum(total_investment))
 
 affordable_proj_market_rate <- 
   left_join(affordable_proj_market_rate, investment_by_project, by = "investment_address")
-
-lihtc_by_project <- affordable_proj_market_rate %>% 
-  group_by(investment_address) %>% 
-  summarize(total_lihtc_amount = sum(lihtc_amount))
-
-affordable_proj_market_rate <- 
-  left_join(affordable_proj_market_rate, lihtc_by_project, by = "investment_address")
 
 affordable_proj_market_rate <- affordable_proj_market_rate %>% 
   distinct(investment_address, .keep_all= TRUE)
 
 total_proj_data <- dc_housing_investment %>% 
   group_by(investment_address) %>% 
-  summarize(total_proj_investment = sum(incentive_amount))
+  summarize(total_dmped_investment = sum(incentive_amount))
 
 dc_housing_investment <- 
   left_join(dc_housing_investment, total_proj_data, by = "investment_address")
@@ -225,16 +220,39 @@ dc_housing_investment <-
 
 ```{r}
 
-# Merging the existing data set with market rate data set
+# Merging the existing data set with market rate data set and recoding some variables
+# The investment and unit data from the two data sets do not always line up
+# I compare the investment amount and take the larger of the values assuming that the data set with a larger investment value is more up to date with recent funding allocation
+# I do the same with the affordable unit data 
+# Before comparing, I replace missing values with 0 for the corresponding variables from the other data set  
+
+#TODO: recode the different AMI variables so that they line up and there is one set (if necessary, maybe I don't care as much?)
 
 combined_data <- 
-  full_join(dc_housing_investment, affordable_proj_market_rate, by = "investment_address")
+  full_join(dc_housing_investment, affordable_proj_market_rate, by = "investment_address") %>% 
+  mutate(total_dmped_investment = replace_na(total_dmped_investment, 0),
+         total_dhcd_investment = replace_na(total_dhcd_investment, 0),
+         total_dmped_affordable = replace_na(total_dmped_affordable, 0),
+         total_dhcd_affordable = replace_na(total_dhcd_affordable, 0),
+         total_units = replace_na(total_units, 0),
+         total_proj_investment = if_else(total_dmped_investment > total_dhcd_investment, total_dmped_investment, total_dhcd_investment),
+         total_proj_affordable = if_else(total_dmped_affordable > total_dhcd_affordable, total_dmped_affordable, total_dhcd_affordable),
+         total_proj_units = if_else(total_dmped_affordable > total_units, total_dmped_affordable, total_units))
 
-test_columns <- combined_data %>% 
-  filter(!is.na(total_affordable)) %>% 
-  mutate(same_30 = if_else(ami_30 == ami_0_30, TRUE, FALSE),
-         same_50 = if_else(ami_50 == ami_31_50, TRUE, FALSE),
-         same_affordable = if_else(total_affordable == affordable_units, TRUE, FALSE))
+comparing_units <- combined_data %>% 
+  mutate(total_dmped_affordable = replace_na(total_dmped_affordable, 0),
+         total_dhcd_affordable = replace_na(total_dhcd_affordable, 0),
+         more_units = if_else(total_dhcd_affordable > total_dmped_affordable, "DHCD", "DMPED"),
+         unit_diff = total_dmped_affordable - total_dhcd_affordable,
+         total_units = replace_na(total_units, 0)) %>% 
+  select(investment_address, total_dmped_affordable, total_dhcd_affordable, unit_diff, more_units, total_units, total_proj_units, market_rate_units, total_proj_affordable)
+
+comparing_investment <- combined_data %>% 
+  mutate(total_dmped_investment = replace_na(total_dmped_investment, 0),
+         total_dhcd_investment = replace_na(total_dhcd_investment, 0),
+         bigger_investment = if_else(total_dhcd_investment > total_dmped_investment, "DHCD", "DMPED"),
+         invest_diff = total_dmped_investment - total_dhcd_investment) %>% 
+  select(investment_address, total_dmped_investment, total_dhcd_investment, invest_diff, bigger_investment)
 
 ```
 
@@ -245,14 +263,6 @@ test_columns <- combined_data %>%
 # but also want to preserve each incentive_name that was used for each project
 
 # I should just ask how to do this
-
-# this step gets the total project investment by address
-total_proj_data <- dc_housing_investment %>% 
-  group_by(investment_address) %>% 
-  summarize(total_proj_investment = sum(incentive_amount))
-
-dc_housing_investment <- 
-  left_join(dc_housing_investment, total_proj_data, by = "investment_address")
 
 
 
