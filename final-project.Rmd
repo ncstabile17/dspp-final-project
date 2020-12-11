@@ -60,7 +60,6 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     total_affordable = as.numeric(total_affordable),
     incentive_name=replace(incentive_name, incentive_name=="HFA Revenue Bond Issuance", "HFA Revenue Bond")
   ) %>% 
-  filter(!is.na(total_affordable)) %>% 
   # Standardizing quadrant parts of address 
   mutate_if(
     is.character, 
@@ -126,13 +125,19 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
   rename(
     investment_address = `Address`,
     total_units = `Total Units`,
-    invest_amount = `Loan/Grant Amount`,
+    loan_grant_amount = `Loan/Grant Amount`,
     lihtc_amount = `LIHTC Allocation`,
+    ami_0_30 = `0-30% AMI units`,
+    ami_31_50 = `31-50% AMI Units`,
+    ami_51_80 = `51-80% AMI Units`,
+    market_rate_ami_81 = `81%+ AMI / Market Rate`,
+    affordable_units = `Affordable Units`,
+    psh_units = `PSH Units`
   ) %>%
   mutate(
     investment_address = str_to_upper(investment_address),
     total_units = as.numeric(total_units),
-    invest_amount = replace_na(as.numeric(gsub('[\\$,]', '', invest_amount)), 0),
+    loan_grant_amount = replace_na(as.numeric(gsub('[\\$,]', '', loan_grant_amount)), 0),
     lihtc_amount = replace_na(as.numeric(gsub('[\\$,]', '', lihtc_amount)), 0)
   ) %>% 
   filter(!is.na(total_units)) %>% 
@@ -191,11 +196,11 @@ affordable_proj_market_rate$investment_address <- str_remove_all(affordable_proj
 
 ```{r}
 
-# Trying to match up investment data by project
+# Getting total investment data by project for both data sets
 
 investment_by_project <- affordable_proj_market_rate %>% 
   group_by(investment_address) %>% 
-  summarize(total_invest_amount = sum(invest_amount))
+  summarize(total_loan_grant_amount = sum(loan_grant_amount))
 
 affordable_proj_market_rate <- 
   left_join(affordable_proj_market_rate, investment_by_project, by = "investment_address")
@@ -207,6 +212,29 @@ lihtc_by_project <- affordable_proj_market_rate %>%
 affordable_proj_market_rate <- 
   left_join(affordable_proj_market_rate, lihtc_by_project, by = "investment_address")
 
+affordable_proj_market_rate <- affordable_proj_market_rate %>% 
+  distinct(investment_address, .keep_all= TRUE)
+
+total_proj_data <- dc_housing_investment %>% 
+  group_by(investment_address) %>% 
+  summarize(total_proj_investment = sum(incentive_amount))
+
+dc_housing_investment <- 
+  left_join(dc_housing_investment, total_proj_data, by = "investment_address")
+```
+
+```{r}
+
+# Merging the existing data set with market rate data set
+
+combined_data <- 
+  full_join(dc_housing_investment, affordable_proj_market_rate, by = "investment_address")
+
+test_columns <- combined_data %>% 
+  filter(!is.na(total_affordable)) %>% 
+  mutate(same_30 = if_else(ami_30 == ami_0_30, TRUE, FALSE),
+         same_50 = if_else(ami_50 == ami_31_50, TRUE, FALSE),
+         same_affordable = if_else(total_affordable == affordable_units, TRUE, FALSE))
 
 ```
 
@@ -232,30 +260,8 @@ dc_housing_investment <-
 ```
 
 ```{r}
-# I don't think this is actually doing to work because it looks like there are multiple 
-# entrees for some addresses in the second data set
-# Or it might work but might need additional maneuvering, might be easier to use MAR
-# Also, it looks like there are some entries with affordable housing listed in the second
-# data set, but not the first (particularly tax exemptions)
-# Also, the second data set has investments prior to 2015, which makes things confusing
-# if(nrow(anti_join(dc_housing_investment, affordable_proj_market_rate, by = "investment_address")) == 0){
-#  print("Success - no data lost in join")
-# } else {
-#   print(paste0(
-#    "Warning - ", nrow(anti_join(dc_housing_investment, affordable_proj_market_rate, by = "investment_address")),
-#    " rows of data were not joined."))
-# }
 
-# dc_housing_investment <- left_join(dc_housing_investment, affordable_proj_market_rate, by = "investment_address")
 
-# Some projects (denoted by address) had multiple investments from different programs so it's useful to know the total investment for each observation
-# There is probably a more efficient way to add this variable 
-total_proj_data <- dc_housing_investment %>% 
-  group_by(investment_address) %>% 
-  summarize(total_proj_investment = sum(incentive_amount))
-
-dc_housing_investment <- 
-  left_join(dc_housing_investment, total_proj_data, by = "investment_address")
 
 # The set of ratio variables show how much a particular investment (observation) contributed to the overall project to account for projects with multiple investments
 # The second set of variables was created to analyze the return on investment in terms of number of dollars invested for each unit
