@@ -132,8 +132,8 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
   mutate(
     investment_address = str_to_upper(investment_address),
     total_units = as.numeric(total_units),
-    invest_amount = as.numeric(gsub('[\\$,]', '', invest_amount)),
-    lihtc_amount = as.numeric(gsub('[\\$,]', '', lihtc_amount))
+    invest_amount = replace_na(as.numeric(gsub('[\\$,]', '', invest_amount)), 0),
+    lihtc_amount = replace_na(as.numeric(gsub('[\\$,]', '', lihtc_amount)), 0)
   ) %>% 
   filter(!is.na(total_units)) %>% 
   mutate_if(
@@ -191,11 +191,34 @@ affordable_proj_market_rate$investment_address <- str_remove_all(affordable_proj
 
 ```{r}
 
+# Trying to match up investment data by project
+
+investment_by_project <- affordable_proj_market_rate %>% 
+  group_by(investment_address) %>% 
+  summarize(total_invest_amount = sum(invest_amount))
+
+affordable_proj_market_rate <- 
+  left_join(affordable_proj_market_rate, investment_by_project, by = "investment_address")
+
+lihtc_by_project <- affordable_proj_market_rate %>% 
+  group_by(investment_address) %>% 
+  summarize(total_lihtc_amount = sum(lihtc_amount))
+
+affordable_proj_market_rate <- 
+  left_join(affordable_proj_market_rate, lihtc_by_project, by = "investment_address")
+
+
+```
+
+
+```{r}
+
 # trying to make a data set with projects/investment_address as unit of observation
 # but also want to preserve each incentive_name that was used for each project
 
 # I should just ask how to do this
 
+# this step gets the total project investment by address
 total_proj_data <- dc_housing_investment %>% 
   group_by(investment_address) %>% 
   summarize(total_proj_investment = sum(incentive_amount))
