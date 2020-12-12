@@ -247,32 +247,81 @@ combined_data <-
 
 # I want to plot the investment and total unit production
 # For this, I exclude projects that did not produce any housing (N = 147), projects without investment data (N = 85), and those that produced affordable units, but did not have clear data on total units for the project (N = 30)
-combined_data %>% 
+
+total_unit_investment_data <- combined_data %>% 
   filter(!is.na(total_units) & total_proj_investment > 0) %>% 
-  ggplot() +
+  mutate(investment_per_unit = total_proj_investment/total_units,
+         investment_year = as.numeric(str_sub(`Projected or Actual Closing Date`, -2, -1)))
+
+total_unit_investment_data %>% 
+  ggplot(aes(x = total_proj_investment, 
+        y = total_units)) +
   geom_point(
-    aes(x = total_proj_investment, 
-        y = total_units,
-        color = if_else(market_rate_units > 0, "Yes", "No")
-        )) +
+    aes(color = if_else(market_rate_units > 0, "Yes", "No"))) +
+  geom_smooth(method=lm) +
   labs(title = "Total Investment by Affordable Units",
        color = "Project with Market Rate Units") +
   scale_x_continuous(labels = comma) +
   scale_color_manual(values = c("black", "red")) +
   theme_minimal()
 
-# Want to look at the investment per unit and relationship to number of affordable units produced
-combined_data %>% 
-  filter(!is.na(total_units) & total_proj_investment > 0) %>% 
-  mutate(investment_per_unit = total_proj_investment/total_units) %>% 
+total_unit_investment_data %>% 
+  mutate(has_market_rate = if_else(market_rate_units > 0, TRUE, FALSE)) %>% 
   ggplot() +
-  geom_point(
-    aes(x = investment_per_unit, 
+  geom_histogram(
+    aes(x = investment_per_unit),
+    color="black", 
+    fill="white",
+    binwidth = 10000) +
+  scale_x_continuous(labels = comma) +
+  facet_wrap(~ has_market_rate)
+
+total_unit_investment_data %>% 
+  mutate(investment_year = if_else((is.na(investment_year) & !is.na(year)), as.numeric(str_sub(year, -2, -1)), investment_year)) %>% 
+  ggplot() +
+  geom_histogram(
+    aes(x = investment_per_unit),
+    color="black", 
+    fill="white",
+    binwidth = 10000) +
+  scale_x_continuous(labels = comma) +
+  facet_wrap(~ investment_year)
+
+# Want to look at the investment per unit and relationship to number of affordable units produced
+total_unit_investment_data %>% 
+  ggplot(aes(x = investment_per_unit, 
         y = total_proj_affordable)) +
+  geom_point() +
+  geom_smooth(method=lm) +
+  labs(title = "Total Investment by Affordable Units") +
+  scale_x_continuous(labels = comma) +
+  theme_minimal()
+
+total_unit_investment_data %>% 
+  ggplot(aes(x = investment_per_unit, 
+        y = ami_0_30)) +
+  geom_point() +
+  geom_smooth(method=lm) +
+  labs(title = "Total Investment by Affordable Units") +
+  scale_x_continuous(labels = comma) +
+  theme_minimal()
+
+total_unit_investment_data %>% 
+  ggplot(aes(x = investment_per_unit, 
+        y = ami_81)) +
+  geom_point() +
+  geom_smooth(method=lm) +
   labs(title = "Total Investment by Affordable Units") +
   scale_x_continuous(labels = comma) +
   theme_minimal()
   
+
+```
+
+```{r}
+
+
+
 
 ```
 
