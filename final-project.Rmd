@@ -221,31 +221,76 @@ dc_housing_investment <-
 ```{r}
 
 # Merging the existing data set with market rate data set and recoding some variables
+# Since I will be doing project-level analysis rather than investment-level, I remove duplicate entries by address
+
 # The investment and unit data from the two data sets do not always line up
 # I compare the investment amount and take the larger of the values assuming that the data set with a larger investment value is more up to date with recent funding allocation
 # I do the same with the affordable unit data 
 # Before comparing, I replace missing values with 0 for the corresponding variables from the other data set  
-
-#TODO: recode the different AMI variables so that they line up and there is one set (if necessary, maybe I don't care as much?)
+# I also align the ami_30 data so all projects with data for 30% AMI units are using the ami_0_30 variable
 
 combined_data <- 
   full_join(dc_housing_investment, affordable_proj_market_rate, by = "investment_address") %>% 
+  distinct(investment_address, .keep_all= TRUE) %>% 
   mutate(total_dmped_investment = replace_na(total_dmped_investment, 0),
          total_dhcd_investment = replace_na(total_dhcd_investment, 0),
          total_dmped_affordable = replace_na(total_dmped_affordable, 0),
          total_dhcd_affordable = replace_na(total_dhcd_affordable, 0),
-         total_units = replace_na(total_units, 0),
          total_proj_investment = if_else(total_dmped_investment > total_dhcd_investment, total_dmped_investment, total_dhcd_investment),
          total_proj_affordable = if_else(total_dmped_affordable > total_dhcd_affordable, total_dmped_affordable, total_dhcd_affordable),
-         total_proj_units = if_else(total_dmped_affordable > total_units, total_dmped_affordable, total_units))
+         ami_0_30 = if_else((is.na(ami_0_30) & !is.na(ami_30)), ami_30, ami_0_30))
 
+
+```
+
+```{r}
+
+# I want to plot the investment and total unit production
+# For this, I exclude projects that did not produce any housing (N = 147), projects without investment data (N = 85), and those that produced affordable units, but did not have clear data on total units for the project (N = 30)
+combined_data %>% 
+  filter(!is.na(total_units) & total_proj_investment > 0) %>% 
+  ggplot() +
+  geom_point(
+    aes(x = total_proj_investment, 
+        y = total_units,
+        color = if_else(market_rate_units > 0, "Yes", "No")
+        )) +
+  labs(title = "Total Investment by Affordable Units",
+       color = "Project with Market Rate Units") +
+  scale_x_continuous(labels = comma) +
+  scale_color_manual(values = c("black", "red")) +
+  theme_minimal()
+
+# Want to look at the investment per unit and relationship to number of affordable units produced
+combined_data %>% 
+  filter(!is.na(total_units) & total_proj_investment > 0) %>% 
+  mutate(investment_per_unit = total_proj_investment/total_units) %>% 
+  ggplot() +
+  geom_point(
+    aes(x = investment_per_unit, 
+        y = total_proj_affordable)) +
+  labs(title = "Total Investment by Affordable Units") +
+  scale_x_continuous(labels = comma) +
+  theme_minimal()
+  
+
+```
+
+
+
+```{r}
 comparing_units <- combined_data %>% 
   mutate(total_dmped_affordable = replace_na(total_dmped_affordable, 0),
          total_dhcd_affordable = replace_na(total_dhcd_affordable, 0),
          more_units = if_else(total_dhcd_affordable > total_dmped_affordable, "DHCD", "DMPED"),
          unit_diff = total_dmped_affordable - total_dhcd_affordable,
          total_units = replace_na(total_units, 0)) %>% 
-  select(investment_address, total_dmped_affordable, total_dhcd_affordable, unit_diff, more_units, total_units, total_proj_units, market_rate_units, total_proj_affordable)
+  filter(is.na(total_units))
+
+
+         unit_cost = if_else(total_units > 0, total_proj_investment/total_units, 0),
+         affordable_cost = if_else(total_proj_affordable > 0, total_proj_investment/total_proj_affordable, 0),
+         ami_30_cost = if_else(ami_0_30 > 0, total_proj_investment/ami_30_ratio, 0)
 
 comparing_investment <- combined_data %>% 
   mutate(total_dmped_investment = replace_na(total_dmped_investment, 0),
