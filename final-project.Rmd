@@ -19,6 +19,7 @@ library(tidyverse)
 library(haven)
 library(readxl)
 library(scales)
+library(stringi)
 ```
 
 ### Data Import and Cleaning
@@ -45,6 +46,10 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     ami_50 = `50% AMI`,
     ami_60 = `60% AMI`,
     ami_80 = `80% AMI`,
+    one_br = `1 BRs`,
+    two_br = `2 BRs`,
+    three_br = `3 BRs`,
+    four_plus_br = `4+ BRs`,
     total_dmped_affordable = `Total Affordable Units Produced or Preserved`,
     dc_residents_employed = `Number of District Residents Employed`,
     num_cbes = `Number of CBEs`
@@ -57,8 +62,13 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     ami_50 = as.numeric(ami_50),
     ami_60 = as.numeric(ami_60),
     ami_80 = as.numeric(ami_80),
+    one_br = as.numeric(one_br),
+    two_br = as.numeric(two_br),
+    three_br = as.numeric(three_br),
+    four_plus_br = as.numeric(four_plus_br),
     total_dmped_affordable = as.numeric(total_dmped_affordable),
-    incentive_name=replace(incentive_name, incentive_name=="HFA Revenue Bond Issuance", "HFA Revenue Bond")
+    total_bedrooms = one_br + 2*two_br + 3*three_br + 4*four_plus_br,
+    incentive_name = str_replace_all(incentive_name, c("HFA Revenue Bond Issuance" = "HFARB", "HFA Revenue Bond" = "HFARB", "4% Low Income Housing Tax Credit" = "LIHTC", "9% Low Income Housing Tax Credit" = "LIHTC", "Community Development Block Grant \\(CDBG\\)" = "CDBG", "Creative and Open Space Modernization Grant" = "OTHER", "District of Columbia Business Capital Program" = "OTHER", "DMPED Grant" = "OTHER", "Economic Development Special Account" = "OTHER", "HOME Investment Partnerships Program" = "HOME", "Housing Preservation Fund" = "HPF", "Housing Production Trust Fund" = "HPTF", "Industrial Revenue Bond" = "IRB", "Land Disposition Agreement" = "OTHER", "Legacy Business" = "OTHER", "Makerspace Marketplace Grant" = "OTHER", "Neighborhood Prosperity Fund" = "OTHER", "New Communities Initiative" = "OTHER", "Qualified Supermarket Tax Incentive" = "TAX", "Real Property Tax Abatement" = "TAX", "Tax Exemption" = "TAX", "Tax Increment Financing" = "TAX"))
   ) %>% 
   # Standardizing quadrant parts of address 
   mutate_if(
@@ -132,7 +142,8 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
     ami_51_80 = `51-80% AMI Units`,
     ami_81 = `81%+ AMI / Market Rate`,
     total_dhcd_affordable = `Affordable Units`,
-    psh_units = `PSH Units`
+    psh_units = `PSH Units`,
+    funding_sources = `Funding Sources`
   ) %>%
   mutate(
     investment_address = str_to_upper(investment_address),
@@ -142,6 +153,7 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
     lihtc_amount = replace_na(as.numeric(gsub('[\\$,]', '', lihtc_amount)), 0),
     total_investment = lihtc_amount + loan_grant_amount
   ) %>% 
+  separate(funding_sources, c("funding_source1", "funding_source2")) %>% 
   filter(!is.na(total_units)) %>% 
   mutate_if(
     is.character, 
@@ -207,8 +219,38 @@ investment_by_project <- affordable_proj_market_rate %>%
 affordable_proj_market_rate <- 
   left_join(affordable_proj_market_rate, investment_by_project, by = "investment_address")
 
-affordable_proj_market_rate <- affordable_proj_market_rate %>% 
+funding_source_data <- affordable_proj_market_rate %>% 
+  filter(!is.na(funding_source1)) %>% 
+  select(investment_address, funding_source1, funding_source2) %>%
+  group_by(investment_address) %>% 
+  distinct(funding_source1, .keep_all = TRUE) %>% 
+  mutate(fund1_combine = paste0(funding_source1, collapse = " "))
+
+funding_source_data2 <- funding_source_data %>% 
+  filter(!is.na(funding_source2))
+
+funding_source_data <- 
+  left_join(funding_source_data, funding_source_data2, by = "investment_address") %>% 
+  mutate(all_funding_sources = if_else(str_detect(fund1_combine.y, funding_source2.y), fund1_combine.y, paste(fund1_combine.y, funding_source2.y, sep = " ")),
+         all_dhcd_funding = if_else(is.na(all_funding_sources), fund1_combine.x, all_funding_sources)) %>% 
+  select(investment_address, all_dhcd_funding) %>% 
+  distinct(investment_address, .keep_all = TRUE)
+         
+affordable_proj_market_rate <- 
+  left_join(affordable_proj_market_rate, funding_source_data, by = "investment_address") %>% 
   distinct(investment_address, .keep_all= TRUE)
+
+funding_source_data <- dc_housing_investment %>% 
+  select(investment_address, incentive_name) %>%
+  group_by(investment_address) %>% 
+  distinct(incentive_name, .keep_all = TRUE) %>% 
+  mutate(all_dmped_funding = paste0(incentive_name, collapse = " ")) %>% 
+  ungroup() %>% 
+  select(investment_address, all_dmped_funding) %>% 
+  distinct(investment_address, .keep_all = TRUE)
+
+dc_housing_investment <- 
+  left_join(dc_housing_investment, funding_source_data, by = "investment_address")
 
 total_proj_data <- dc_housing_investment %>% 
   group_by(investment_address) %>% 
@@ -238,7 +280,8 @@ combined_data <-
          total_dhcd_affordable = replace_na(total_dhcd_affordable, 0),
          total_proj_investment = if_else(total_dmped_investment > total_dhcd_investment, total_dmped_investment, total_dhcd_investment),
          total_proj_affordable = if_else(total_dmped_affordable > total_dhcd_affordable, total_dmped_affordable, total_dhcd_affordable),
-         ami_0_30 = if_else((is.na(ami_0_30) & !is.na(ami_30)), ami_30, ami_0_30))
+         ami_0_30 = if_else((is.na(ami_0_30) & !is.na(ami_30)), ami_30, ami_0_30),
+         total_funding_sources = if_else(is.na(all_dmped_funding), all_dhcd_funding, all_dmped_funding))
 
 
 ```
@@ -321,10 +364,41 @@ total_unit_investment_data %>%
 ```{r}
 
 
+# I can just use the Open Data Affordable Housing data set for mapping if I want to
+# It already has location information, but they don't match up well with the addresses from the other data sets
+
+```
+- Funding Sources
+- Ward
+- Quadrant
+- Total Affordable Units
+- 30% AMI Units
+- 50% AMI Units
+- 60% AMI Units
+- 80% AMI Units
+- Market Rate Units
+- Total Bedrooms
+- DC residents employed
+- Number of certified small businesses served
+
+```{r}
+
+# Predicting amount of investment in a project
+  
+  
+  
+  
+  distinct(investment_address, .keep_all= TRUE) %>% 
+  mutate(total_dmped_investment = replace_na(total_dmped_investment, 0),
+         total_dhcd_investment = replace_na(total_dhcd_investment, 0),
+         total_dmped_affordable = replace_na(total_dmped_affordable, 0),
+         total_dhcd_affordable = replace_na(total_dhcd_affordable, 0),
+         total_proj_investment = if_else(total_dmped_investment > total_dhcd_investment, total_dmped_investment, total_dhcd_investment),
+         total_proj_affordable = if_else(total_dmped_affordable > total_dhcd_affordable, total_dmped_affordable, total_dhcd_affordable),
+         ami_0_30 = if_else((is.na(ami_0_30) & !is.na(ami_30)), ami_30, ami_0_30))
 
 
 ```
-
 
 
 ```{r}
@@ -348,43 +422,6 @@ comparing_investment <- combined_data %>%
          invest_diff = total_dmped_investment - total_dhcd_investment) %>% 
   select(investment_address, total_dmped_investment, total_dhcd_investment, invest_diff, bigger_investment)
 
-```
-
-
-```{r}
-
-# trying to make a data set with projects/investment_address as unit of observation
-# but also want to preserve each incentive_name that was used for each project
-
-# I should just ask how to do this
-
-
-
-
-```
-
-```{r}
-
-
-
-# The set of ratio variables show how much a particular investment (observation) contributed to the overall project to account for projects with multiple investments
-# The second set of variables was created to analyze the return on investment in terms of number of dollars invested for each unit
-dc_housing_investment <- dc_housing_investment %>% 
-  mutate(
-    investment_ratio = incentive_amount/total_proj_investment,
-    total_affordable_ratio = investment_ratio*total_affordable,
-    ami_30_ratio = investment_ratio*ami_30,
-    ami_50_ratio = investment_ratio*ami_50,
-    ami_60_ratio = investment_ratio*ami_60,
-    ami_80_ratio = investment_ratio*ami_80,
-    total_affordable_efficiency = if_else(total_affordable_ratio > 0, incentive_amount/total_affordable_ratio, 0),
-    ami_30_efficiency = if_else(ami_30_ratio > 0, incentive_amount/ami_30_ratio, 0),
-    ami_50_efficiency = if_else(ami_50_ratio > 0, incentive_amount/ami_50_ratio, 0),
-    ami_60_efficiency = if_else(ami_60_ratio > 0, incentive_amount/ami_60_ratio, 0),
-    ami_80_efficiency = if_else(ami_80_ratio > 0, incentive_amount/ami_80_ratio, 0),
-    )
-
-# Looking to pull in data on market rate housing units
 ```
 
 
