@@ -36,7 +36,7 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
          -`Incentive Type`,
          -`Agency`) %>% 
   rename(
-    year = `FY`,
+    dmped_year = `FY`,
     incentive_name = `Incentive Name`,
     recipient_name = `Recipient Name`,
     incentive_amount = `Incentive Amount`, 
@@ -141,6 +141,7 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
     ami_31_50 = `31-50% AMI Units`,
     ami_51_80 = `51-80% AMI Units`,
     ami_81 = `81%+ AMI / Market Rate`,
+    dhcd_year = `Projected or Actual Closing Date`,
     total_dhcd_affordable = `Affordable Units`,
     psh_units = `PSH Units`,
     funding_sources = `Funding Sources`
@@ -151,6 +152,7 @@ affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.cs
     total_units = as.numeric(total_units),
     loan_grant_amount = replace_na(as.numeric(gsub('[\\$,]', '', loan_grant_amount)), 0),
     lihtc_amount = replace_na(as.numeric(gsub('[\\$,]', '', lihtc_amount)), 0),
+    dhcd_year = as.Date(dhcd_year, "%m/%d/%y"),
     total_investment = lihtc_amount + loan_grant_amount
   ) %>% 
   separate(funding_sources, c("funding_source1", "funding_source2")) %>% 
@@ -269,7 +271,7 @@ dc_housing_investment <-
 # I compare the investment amount and take the larger of the values assuming that the data set with a larger investment value is more up to date with recent funding allocation
 # I do the same with the affordable unit data 
 # Before comparing, I replace missing values with 0 for the corresponding variables from the other data set  
-# I also align the ami_30 data so all projects with data for 30% AMI units are using the ami_0_30 variable
+# I also align the AMI variables so all projects with data for these variables using the same variable, with the DHCD data set as the default
 
 combined_data <- 
   full_join(dc_housing_investment, affordable_proj_market_rate, by = "investment_address") %>% 
@@ -281,7 +283,13 @@ combined_data <-
          total_proj_investment = if_else(total_dmped_investment > total_dhcd_investment, total_dmped_investment, total_dhcd_investment),
          total_proj_affordable = if_else(total_dmped_affordable > total_dhcd_affordable, total_dmped_affordable, total_dhcd_affordable),
          ami_0_30 = if_else((is.na(ami_0_30) & !is.na(ami_30)), ami_30, ami_0_30),
-         total_funding_sources = if_else(is.na(all_dmped_funding), all_dhcd_funding, all_dmped_funding))
+         ami_31_50 = if_else((is.na(ami_31_50) & !is.na(ami_50)), ami_50, ami_31_50),
+         ami_51_80 = if_else((is.na(ami_51_80) & !is.na(ami_80) & !is.na(ami_60)), ami_60 + ami_80, ami_51_80),
+         total_funding_sources = if_else(is.na(all_dmped_funding), all_dhcd_funding, all_dmped_funding),
+         investment_year = if_else(is.na(dhcd_year) & !is.na(dmped_year), as.character(str_sub(dmped_year, -2, -1)), as.character(format(dhcd_year, '%y'))),
+         quadrant = str_sub(investment_address, -2, -1),
+         quadrant = if_else(quadrant %in% c("NE", "NW", "SW", "SE"), quadrant, "NA")
+         )
 
 
 ```
@@ -385,7 +393,8 @@ total_unit_investment_data %>%
 
 # Predicting amount of investment in a project
   
-  
+prediction_data <- combined_data %>% 
+  select(investment_address, ward, dc_residents_employed, num_cbes, total_bedrooms, ami_0_30, ami_31_50, ami_51_80, ami_81, market_rate_units, total_proj_investment, lihtc_amount, total_proj_affordable, total_funding_sources, investment_year, quadrant)
   
   
   distinct(investment_address, .keep_all= TRUE) %>% 
