@@ -1,4 +1,4 @@
 *.Rhistory*
 *.csv*
 *.user*
-.Rproj.user
+*.Rproj*

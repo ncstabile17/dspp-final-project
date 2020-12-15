@@ -21,6 +21,8 @@ library(readxl)
 library(scales)
 library(stringi)
 library(visdat)
+library(caret)
+library(tidymodels)
 ```
 
 ### Data Import and Cleaning
@@ -273,7 +275,9 @@ dc_housing_investment <-
 # I compare the investment amount and take the larger of the values assuming that the data set with a larger investment value is more up to date with recent funding allocation
 # I do the same with the affordable unit data 
 # Before comparing, I replace missing values with 0 for the corresponding variables from the other data set that are created when joining
-# I also align the AMI variables so all projects with data for these variables using the same variable, with the DHCD data set as the default
+# This process also affects projects in the DMPED data set that had NA values for total affordable housing; this makes sense because these NA values existed for investments that would not have been expected to produce any affordable housing (i.e. a business grant or tax exemption for a museum)
+# I also align the AMI variables so all projects with data for these variables are using the same variable, with the DHCD data set as the default
+# I then use the address variable to create a separate quadrant variable
 
 combined_data <- 
   full_join(dc_housing_investment, affordable_proj_market_rate, by = "investment_address") %>% 
@@ -397,12 +401,27 @@ total_unit_investment_data %>%
 ```{r}
 
 # Predicting amount of investment in a project
-  
+# I previously imputed 0 for projects that had NA values for total affordable housing produced as these only existed in the DMPED data set and are assumed to have not produced any housing (at any affordability levels) based on the description of the investments; I therefore repeat this for the other housing unit affordability level variables and the total_bedrooms variable
+
 prediction_data <- combined_data %>% 
-  select(investment_address, ward, dc_residents_employed, num_cbes, total_bedrooms, ami_0_30, ami_31_50, ami_51_80, ami_81, market_rate_units, total_proj_investment, proj_lihtc_amount, total_proj_affordable, total_funding_sources, investment_year, quadrant)
+  select(investment_address, ward, dc_residents_employed, num_cbes, total_bedrooms, ami_0_30, ami_31_50, ami_51_80, ami_81, market_rate_units, total_proj_investment, proj_lihtc_amount, total_proj_affordable, total_funding_sources, investment_year, quadrant) %>% 
+  mutate(ami_0_30 = if_else(total_proj_affordable == 0, 0, ami_0_30),
+         ami_31_50 = if_else(total_proj_affordable == 0, 0, ami_31_50),
+         ami_51_80 = if_else(total_proj_affordable == 0, 0, ami_51_80),
+         ami_81 = if_else(total_proj_affordable == 0, 0, ami_81),
+         market_rate_units = if_else(total_proj_affordable == 0, 0, market_rate_units),
+         total_bedrooms = if_else(total_proj_affordable == 0, 0, total_bedrooms)
+         )
+
+set.seed(20201212)
+# create a split object
+predict_investment_split <- initial_split(data = prediction_data, prop = 0.75)
+# create the training and testing data
+predict_investment_train <- training(x = predict_investment_split)
+predict_investment_test <- testing(x = predict_investment_split)
 
 # Outcome variable is right-skewed so will use log transformation
-prediction_data %>% 
+predict_investment_train %>% 
   ggplot() +
   geom_histogram(
     aes(x = total_proj_investment),
@@ -411,13 +430,25 @@ prediction_data %>%
   scale_x_continuous(labels = comma) + 
   theme_minimal()
 
-vis_miss(prediction_data, cluster = TRUE)
+vis_miss(predict_investment_train, cluster = TRUE)
 
-# TODO: Additional imputation based on visualizaiton, maybe remove some vars
+nearZeroVar(predict_investment_train, saveMetrics = TRUE) %>% 
+  rownames_to_column() %>% 
+  filter(nzv)
+
+count(predict_investment_train, total_proj_affordable) %>% arrange(n)
+
 # TODO: Keep working on feature engineering and building model
-  
-predict_investment_recipe <- recipe(total_proj_investment ~ ., data = predict_investment_train) %>%
-  step_log(all_outcomes())
+# TODO: Manually add ward data for missing ones?
+
+
+
+predict_investment_recipe <- 
+  recipe(total_proj_investment ~ ., data = predict_investment_train) %>%
+  step_nzv(all_predictors()) %>% 
+  step_log(all_outcomes()) %>% 
+  step_bagimpute(all_predictors()) %>% 
+  step_BoxCox(all_predictors())
   
   distinct(investment_address, .keep_all= TRUE) %>% 
   mutate(total_dmped_investment = replace_na(total_dmped_investment, 0),
