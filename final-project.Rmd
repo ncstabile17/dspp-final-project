@@ -24,10 +24,15 @@ library(visdat)
 library(caret)
 library(tidymodels)
 library(ranger) 
-library(h2o)
+library(xgboost)
 library(vip)
 library(sf)
 ```
+
+TODO: Add GBM model
+TODO: Clean up comments and any extraneous code
+TODO: Make sure everything is formatted properly
+TODO: Add commentary and analysis and add to Github Pages
 
 ### Data Import and Cleaning
 ```{r warning = FALSE, message = FALSE, results = FALSE}
@@ -457,7 +462,7 @@ aff_investment_train <- training(x = aff_investment_split)
 aff_investment_test <- testing(x = aff_investment_split)
 
 # create resamples
-aff_investment_folds <- vfold_cv(data = aff_investment_train, v = 10)
+aff_investment_folds <- vfold_cv(data = aff_investment_train, v = 5)
 
 
 ```
@@ -591,35 +596,56 @@ predict_investment_rf_fit_vip %>%
 # Boosted Tree model to predict investment in a project
 
 # create model object
-predict_investment_bt_mod <- 
-    rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
-    set_mode("regression") %>%
-    set_engine("ranger")
+predict_investment_xgboost_mod <- 
+  boost_tree(
+    trees = tune(),
+    min_n = tune(),
+    tree_depth = tune(),
+    learn_rate = tune(),
+    loss_reduction = tune()) %>%
+  set_engine("xgboost") %>% 
+  set_mode("regression")
 
 # create workflow
-predict_investment_rf_workflow <-
+predict_investment_xgboost_workflow <-
   workflow() %>%
-  add_model(spec = predict_investment_rf_mod) %>%
+  add_model(spec = predict_investment_xgboost_mod) %>%
   add_recipe(recipe = predict_investment_recipe)
 
-n_features <- length(setdiff(names(predict_investment_train), "total_proj_investment"))
-
-# create tuning grid for rf hyperparamters
-predict_investment_rf_grid <- expand.grid(
-  mtry = floor(n_features * c(.25, .333, .4)),
-  min_n = c(1, 5, 10), 
-  trees = c(n_features*10)
+predict_investment_xgboost_grid <- expand.grid(
+  trees = c(100, 500, 1000),
+  min_n = 1,
+  tree_depth = 6,
+  learn_rate = .3,
+  loss_reduction = 0
 )
 
 # estimate models
-predict_investment_rf_res <- 
-  predict_investment_rf_workflow %>%
+predict_investment_xgboost_res <- 
+  predict_investment_xgboost_workflow %>%
   tune_grid(resamples = aff_investment_folds,
-            grid = predict_investment_rf_grid,
+            grid = predict_investment_xgboost_grid,
             control = control_grid(save_pred = TRUE),
             metrics = metric_set(rmse))
 
 show_best(predict_investment_rf_res, "rmse", n = 10)
+
+# grid specification
+xgboost_params <- 
+  dials::parameters(
+    min_n(),
+    tree_depth(),
+    learn_rate(),
+    loss_reduction()
+  )
+
+xgboost_grid <- 
+  dials::grid_max_entropy(
+    xgboost_params, 
+    size = 60
+  )
+
+
 
 
 ```
