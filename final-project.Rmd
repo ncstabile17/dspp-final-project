@@ -375,7 +375,7 @@ total_unit_investment_data %>%
 
 ```{r}
 
-# Predicting amount of investment in a project
+# Predicting amount of investment in a project and total affordable units
 # I previously imputed 0 for projects that had NA values for total affordable housing produced as these only existed in the DMPED data set and are assumed to have not produced any housing (at any affordability levels) based on the description of the investments; I therefore repeat this for the other housing unit affordability level variables and the total_bedrooms variable
 
 prediction_data <- combined_data %>% 
@@ -389,13 +389,23 @@ prediction_data <- combined_data %>%
 
 set.seed(20201212)
 # create a split object
-predict_investment_split <- initial_split(data = prediction_data, prop = 0.75)
+aff_investment_split <- initial_split(data = prediction_data, prop = 0.75)
 # create the training and testing data
-predict_investment_train <- training(x = predict_investment_split)
-predict_investment_test <- testing(x = predict_investment_split)
+aff_investment_train <- training(x = aff_investment_split)
+aff_investment_test <- testing(x = aff_investment_split)
+
+# create resamples
+aff_investment_folds <- vfold_cv(data = aff_investment_train, v = 10)
+
+
+```
+
+```{r}
+
+# Predicting investment in a project
 
 # Outcome variable is right-skewed so will normalize
-predict_investment_train %>% 
+aff_investment_train %>% 
   ggplot() +
   geom_histogram(
     aes(x = total_proj_investment),
@@ -406,16 +416,16 @@ predict_investment_train %>%
 
 # Significant number of missing values across particular variables occur because I combine two data sets, and some projects were only present in one of the data sets which did not have data for particular variables including dc_residents_employed, num_cbes, total_bedrooms, total_funding_sources, and investment_year
 # I choose not to impute these with mean/median or with an algorithm because I'm not confident the other predictors would be very accurate at predicting the missing values for these variables and tree-based algorithms (which I'm planning to utilize) are able to handle missing values
-vis_miss(predict_investment_train, cluster = TRUE)
+vis_miss(aff_investment_train, cluster = TRUE)
 
 # I have no zero-variance predictors, but a few near-zero predictors so these will be filtered out as part of the recipe
-nearZeroVar(predict_investment_train, saveMetrics = TRUE) %>% 
+nearZeroVar(aff_investment_train, saveMetrics = TRUE) %>% 
   rownames_to_column() %>% 
   filter(nzv)
 
 # I'm also going to follow Boehmke and Greenwell's advice to "when in doubt, normalize"
 predict_investment_recipe <- 
-  recipe(total_proj_investment ~ ., data = predict_investment_train) %>%
+  recipe(total_proj_investment ~ ., data = aff_investment_train) %>%
   step_nzv(all_predictors()) %>% 
   step_bagimpute(all_predictors()) %>% 
   step_BoxCox(all_numeric()) %>% 
@@ -424,21 +434,14 @@ predict_investment_recipe <-
   step_other(proj_funding_source, threshold = 0.05, 
              other = "OTHER")
 
-# create resamples
-predict_investment_folds <- vfold_cv(data = predict_investment_train, v = 10)
-
-all_cores <- parallel::detectCores(logical = FALSE) - 1
-
-registerDoFuture()
-cl <- parallel::makeCluster(all_cores)
-plan(future::cluster, workers = cl)
-
 
 ```
 
 
 ```{r}
-# create Random Forest model object
+# Random Forest model to predict investment
+
+# create model object
 predict_investment_rf_mod <- 
     rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
     set_mode("regression") %>%
@@ -462,7 +465,7 @@ predict_investment_rf_grid <- expand.grid(
 # estimate models
 predict_investment_rf_res <- 
   predict_investment_rf_workflow %>%
-  tune_grid(resamples = predict_investment_folds,
+  tune_grid(resamples = aff_investment_folds,
             grid = predict_investment_rf_grid,
             control = control_grid(save_pred = TRUE),
             metrics = metric_set(rmse))
@@ -474,7 +477,7 @@ show_best(predict_investment_rf_res, "rmse", n = 10)
 
 ```{r}
 
-# KNN Model
+# KNN Model to predict investment
 
 # create model object
 predict_investment_knn_mod <-
@@ -494,7 +497,7 @@ predict_investment_knn_grid <- tibble(neighbors = c(7, 9, 11, 13))
 # estimate models
 predict_investment_knn_res <-
   predict_investment_knn_workflow %>%
-  tune_grid(resamples = predict_investment_folds,
+  tune_grid(resamples = aff_investment_folds,
             grid = predict_investment_knn_grid,
             control = control_grid(save_pred = TRUE),
             metrics = metric_set(rmse))
@@ -503,6 +506,105 @@ show_best(predict_investment_knn_res, "rmse", n = 10)
 
 
 ```
+
+```{r}
+
+# Predicting the affordable units in a project
+
+# Outcome variable is right skewed
+aff_investment_train %>% 
+  ggplot() +
+  geom_histogram(
+    aes(x = total_proj_affordable),
+    bins = 50,
+    fill = "blue") +
+  scale_x_continuous(labels = comma) + 
+  theme_minimal()
+
+predict_aff_units_recipe <- 
+  recipe(total_proj_affordable ~ ., data = predict_investment_train) %>%
+  step_nzv(all_predictors()) %>% 
+  step_bagimpute(all_predictors()) %>% 
+  step_BoxCox(all_numeric()) %>% 
+  step_other(investment_year, threshold = 0.10, 
+             other = "other") %>% 
+  step_other(proj_funding_source, threshold = 0.05, 
+             other = "OTHER")
+
+
+```
+
+```{r}
+
+# Random forest model to predict affordable housing units
+
+# Random Forest model to predict investment
+
+# create model object
+predict_aff_rf_mod <- 
+    rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+    set_mode("regression") %>%
+    set_engine("ranger")
+
+# create workflow
+predict_aff_rf_workflow <-
+  workflow() %>%
+  add_model(spec = predict_aff_rf_mod) %>%
+  add_recipe(recipe = predict_aff_units_recipe)
+
+n_features <- length(setdiff(names(aff_investment_train), "total_proj_affordable"))
+
+# create tuning grid for rf hyperparamters
+predict_aff_rf_grid <- expand.grid(
+  mtry = floor(n_features * c(.25, .333, .4)),
+  min_n = c(1, 5, 10), 
+  trees = c(n_features*10)
+)
+
+# estimate models
+predict_aff_rf_res <- 
+  predict_aff_rf_workflow %>%
+  tune_grid(resamples = aff_investment_folds,
+            grid = predict_aff_rf_grid,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(rmse))
+
+show_best(predict_aff_rf_res, "rmse", n = 10)
+
+```
+
+```{r}
+
+# KNN Model to predict affordable units in project
+
+# create model object
+predict_aff_knn_mod <-
+  nearest_neighbor(neighbors = tune()) %>%
+  set_engine(engine = "kknn") %>%
+  set_mode(mode = "regression")
+
+# create workflow
+predict_aff_knn_workflow <-
+  workflow() %>%
+  add_model(spec = predict_aff_knn_mod) %>%
+  add_recipe(recipe = predict_aff_units_recipe)
+
+# create tuning grid for knn hyperparameters
+predict_aff_knn_grid <- tibble(neighbors = c(7, 9, 11, 13))
+
+# estimate models
+predict_aff_knn_res <-
+  predict_aff_knn_workflow %>%
+  tune_grid(resamples = aff_investment_folds,
+            grid = predict_aff_knn_grid,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(rmse))
+
+show_best(predict_aff_knn_res, "rmse", n = 10)
+
+
+```
+
 
 ```{r}
 comparing_units <- combined_data %>% 
