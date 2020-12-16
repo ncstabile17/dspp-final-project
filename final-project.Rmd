@@ -23,6 +23,9 @@ library(stringi)
 library(visdat)
 library(caret)
 library(tidymodels)
+library(ranger) 
+library(h2o)
+library(doFuture)
 ```
 
 ### Data Import and Cleaning
@@ -71,6 +74,10 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     four_plus_br = as.numeric(four_plus_br),
     total_dmped_affordable = as.numeric(total_dmped_affordable),
     total_bedrooms = one_br + 2*two_br + 3*three_br + 4*four_plus_br,
+    # For both dc_residents_employed and num_cbes some observations have N/A values, while others have Not Available
+    # I infer that N/A means "Not Applicable" which would reasonably translate to 0 for my purposes, whereas I replace Not Available values with NA
+    num_cbes = as.numeric(str_replace_all(num_cbes, c("Not Available" = "NA", "N/A" = 0))),
+    dc_residents_employed = as.numeric(str_replace_all(dc_residents_employed, c("Not Available" = "NA", "N/A" = 0))),
     incentive_name = str_replace_all(incentive_name, c("HFA Revenue Bond Issuance" = "HFARB", "HFA Revenue Bond" = "HFARB", "4% Low Income Housing Tax Credit" = "LIHTC", "9% Low Income Housing Tax Credit" = "LIHTC", "Community Development Block Grant \\(CDBG\\)" = "CDBG", "Creative and Open Space Modernization Grant" = "OTHER", "District of Columbia Business Capital Program" = "OTHER", "DMPED Grant" = "OTHER", "Economic Development Special Account" = "OTHER", "HOME Investment Partnerships Program" = "HOME", "Housing Preservation Fund" = "HPF", "Housing Production Trust Fund" = "HPTF", "Industrial Revenue Bond" = "IRB", "Land Disposition Agreement" = "OTHER", "Legacy Business" = "OTHER", "Makerspace Marketplace Grant" = "OTHER", "Neighborhood Prosperity Fund" = "OTHER", "New Communities Initiative" = "OTHER", "Qualified Supermarket Tax Incentive" = "TAX", "Real Property Tax Abatement" = "TAX", "Tax Exemption" = "TAX", "Tax Increment Financing" = "TAX")),
     dmped_lihtc_amount = if_else(incentive_name == "LIHTC", incentive_amount, 0)
   ) %>% 
@@ -404,7 +411,7 @@ total_unit_investment_data %>%
 # I previously imputed 0 for projects that had NA values for total affordable housing produced as these only existed in the DMPED data set and are assumed to have not produced any housing (at any affordability levels) based on the description of the investments; I therefore repeat this for the other housing unit affordability level variables and the total_bedrooms variable
 
 prediction_data <- combined_data %>% 
-  select(investment_address, ward, dc_residents_employed, num_cbes, total_bedrooms, ami_0_30, ami_31_50, ami_51_80, ami_81, market_rate_units, total_proj_investment, proj_lihtc_amount, total_proj_affordable, total_funding_sources, investment_year, quadrant) %>% 
+  select(ward, dc_residents_employed, num_cbes, total_bedrooms, ami_0_30, ami_31_50, ami_51_80, ami_81, market_rate_units, total_proj_investment, proj_lihtc_amount, total_proj_affordable, total_funding_sources, investment_year, quadrant) %>% 
   mutate(ami_0_30 = if_else(total_proj_affordable == 0, 0, ami_0_30),
          ami_31_50 = if_else(total_proj_affordable == 0, 0, ami_31_50),
          ami_51_80 = if_else(total_proj_affordable == 0, 0, ami_51_80),
@@ -420,7 +427,7 @@ predict_investment_split <- initial_split(data = prediction_data, prop = 0.75)
 predict_investment_train <- training(x = predict_investment_split)
 predict_investment_test <- testing(x = predict_investment_split)
 
-# Outcome variable is right-skewed so will use log transformation
+# Outcome variable is right-skewed so will normalize
 predict_investment_train %>% 
   ggplot() +
   geom_histogram(
@@ -430,35 +437,65 @@ predict_investment_train %>%
   scale_x_continuous(labels = comma) + 
   theme_minimal()
 
+# Significant number of missing values across particular variables occur because I combine two data sets, and some projects were only present in one of the data sets which did not have data for particular variables including dc_residents_employed, num_cbes, total_bedrooms, total_funding_sources, and investment_year
+# I choose not to impute these with mean/median or with an algorithm because I'm not confident the other predictors would be very accurate at predicting the missing values for these variables and tree-based algorithms (which I'm planning to utilize) are able to handle missing values
 vis_miss(predict_investment_train, cluster = TRUE)
 
+# I have no zero-variance predictors, but a few near-zero predictors so these will be filtered out as part of the recipe
 nearZeroVar(predict_investment_train, saveMetrics = TRUE) %>% 
   rownames_to_column() %>% 
   filter(nzv)
 
-count(predict_investment_train, total_proj_affordable) %>% arrange(n)
-
-# TODO: Keep working on feature engineering and building model
-# TODO: Manually add ward data for missing ones?
-
-
-
-predict_investment_recipe <- 
-  recipe(total_proj_investment ~ ., data = predict_investment_train) %>%
+# I'm also going to follow Boehmke and Greenwell's advice to "when in doubt, normalize"
+predict_investment_recipe <- recipe(total_proj_investment ~ ., data = predict_investment_train) %>%
   step_nzv(all_predictors()) %>% 
-  step_log(all_outcomes()) %>% 
   step_bagimpute(all_predictors()) %>% 
-  step_BoxCox(all_predictors())
-  
-  distinct(investment_address, .keep_all= TRUE) %>% 
-  mutate(total_dmped_investment = replace_na(total_dmped_investment, 0),
-         total_dhcd_investment = replace_na(total_dhcd_investment, 0),
-         total_dmped_affordable = replace_na(total_dmped_affordable, 0),
-         total_dhcd_affordable = replace_na(total_dhcd_affordable, 0),
-         total_proj_investment = if_else(total_dmped_investment > total_dhcd_investment, total_dmped_investment, total_dhcd_investment),
-         total_proj_affordable = if_else(total_dmped_affordable > total_dhcd_affordable, total_dmped_affordable, total_dhcd_affordable),
-         ami_0_30 = if_else((is.na(ami_0_30) & !is.na(ami_30)), ami_30, ami_0_30))
+  step_BoxCox(all_numeric()) %>% 
+  step_other(investment_year, threshold = 0.01, 
+             other = "other") %>%
+  step_other(total_proj_funding_sources, threshold = 0.1, 
+             other = "OTHER")
 
+# create resamples
+predict_investment_folds <- vfold_cv(data = predict_investment_train, v = 10)
+
+# create model object
+predict_investment_rf_mod <- 
+    rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+    set_mode("regression") %>%
+    set_engine("ranger")
+
+# create workflow
+predict_investment_rf_workflow <-
+  workflow() %>%
+  add_model(spec = predict_investment_rf_mod) %>%
+  add_recipe(recipe = predict_investment_recipe)
+
+n_features <- length(setdiff(names(predict_investment_train), "total_proj_investment"))
+
+# create tuning grid for rf hyperparamters
+predict_investment_rf_grid <- expand.grid(
+  mtry = floor(n_features * c(.333)),
+  min_n = c(10), 
+  trees = c(n_features*10)
+)
+
+
+all_cores <- parallel::detectCores(logical = FALSE) - 1
+
+registerDoFuture()
+cl <- parallel::makeCluster(all_cores)
+plan(future::cluster, workers = cl)
+
+# estimate models
+predict_investment_rf_res <- 
+  predict_investment_rf_workflow %>%
+  tune_grid(resamples = predict_investment_folds,
+            grid = predict_investment_rf_grid,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(rmse))
+
+show_best(predict_investment_rf_res, "rmse", n = 10)
 
 ```
 
