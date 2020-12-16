@@ -78,8 +78,9 @@ dc_housing_investment <- read_csv("data/dc-housing-investment.csv") %>%
     # I infer that N/A means "Not Applicable" which would reasonably translate to 0 for my purposes, whereas I replace Not Available values with NA
     num_cbes = as.numeric(str_replace_all(num_cbes, c("Not Available" = "NA", "N/A" = 0))),
     dc_residents_employed = as.numeric(str_replace_all(dc_residents_employed, c("Not Available" = "NA", "N/A" = 0))),
-    incentive_name = str_replace_all(incentive_name, c("HFA Revenue Bond Issuance" = "HFARB", "HFA Revenue Bond" = "HFARB", "4% Low Income Housing Tax Credit" = "LIHTC", "9% Low Income Housing Tax Credit" = "LIHTC", "Community Development Block Grant \\(CDBG\\)" = "CDBG", "Creative and Open Space Modernization Grant" = "OTHER", "District of Columbia Business Capital Program" = "OTHER", "DMPED Grant" = "OTHER", "Economic Development Special Account" = "OTHER", "HOME Investment Partnerships Program" = "HOME", "Housing Preservation Fund" = "HPF", "Housing Production Trust Fund" = "HPTF", "Industrial Revenue Bond" = "IRB", "Land Disposition Agreement" = "OTHER", "Legacy Business" = "OTHER", "Makerspace Marketplace Grant" = "OTHER", "Neighborhood Prosperity Fund" = "OTHER", "New Communities Initiative" = "OTHER", "Qualified Supermarket Tax Incentive" = "TAX", "Real Property Tax Abatement" = "TAX", "Tax Exemption" = "TAX", "Tax Increment Financing" = "TAX")),
-    dmped_lihtc_amount = if_else(incentive_name == "LIHTC", incentive_amount, 0)
+    incentive_name = str_replace_all(incentive_name, c("HFA Revenue Bond Issuance" = "HFARB", "HFA Revenue Bond" = "HFARB", "4% Low Income Housing Tax Credit" = "LIHTC", "9% Low Income Housing Tax Credit" = "LIHTC", "Community Development Block Grant \\(CDBG\\)" = "CDBG", "Creative and Open Space Modernization Grant" = "COSMG", "District of Columbia Business Capital Program" = "CBCP", "DMPED Grant" = "DMPED", "Economic Development Special Account" = "EDSA", "HOME Investment Partnerships Program" = "HOME", "Housing Preservation Fund" = "HPF", "Housing Production Trust Fund" = "HPTF", "Industrial Revenue Bond" = "IRB", "Land Disposition Agreement" = "LDA", "Legacy Business" = "LBZ", "Makerspace Marketplace Grant" = "MMG", "Neighborhood Prosperity Fund" = "NPF", "New Communities Initiative" = "NCI", "Qualified Supermarket Tax Incentive" = "TAX", "Real Property Tax Abatement" = "TAX", "Tax Exemption" = "TAX", "Tax Increment Financing" = "TAX")),
+    dmped_lihtc_amount = if_else(incentive_name == "LIHTC", incentive_amount, 0),
+    ward = na_if(ward, "N/A")
   ) %>% 
   # Standardizing quadrant parts of address 
   mutate_if(
@@ -232,39 +233,6 @@ investment_by_project <- affordable_proj_market_rate %>%
 affordable_proj_market_rate <- 
   left_join(affordable_proj_market_rate, investment_by_project, by = "investment_address")
 
-funding_source_data <- affordable_proj_market_rate %>% 
-  filter(!is.na(funding_source1)) %>% 
-  select(investment_address, funding_source1, funding_source2) %>%
-  group_by(investment_address) %>% 
-  distinct(funding_source1, .keep_all = TRUE) %>% 
-  mutate(fund1_combine = paste0(funding_source1, collapse = " "))
-
-funding_source_data2 <- funding_source_data %>% 
-  filter(!is.na(funding_source2))
-
-funding_source_data <- 
-  left_join(funding_source_data, funding_source_data2, by = "investment_address") %>% 
-  mutate(all_funding_sources = if_else(str_detect(fund1_combine.y, funding_source2.y), fund1_combine.y, paste(fund1_combine.y, funding_source2.y, sep = " ")),
-         all_dhcd_funding = if_else(is.na(all_funding_sources), fund1_combine.x, all_funding_sources)) %>% 
-  select(investment_address, all_dhcd_funding) %>% 
-  distinct(investment_address, .keep_all = TRUE)
-         
-affordable_proj_market_rate <- 
-  left_join(affordable_proj_market_rate, funding_source_data, by = "investment_address") %>% 
-  distinct(investment_address, .keep_all= TRUE)
-
-funding_source_data <- dc_housing_investment %>% 
-  select(investment_address, incentive_name) %>%
-  group_by(investment_address) %>% 
-  distinct(incentive_name, .keep_all = TRUE) %>% 
-  mutate(all_dmped_funding = paste0(incentive_name, collapse = " ")) %>% 
-  ungroup() %>% 
-  select(investment_address, all_dmped_funding) %>% 
-  distinct(investment_address, .keep_all = TRUE)
-
-dc_housing_investment <- 
-  left_join(dc_housing_investment, funding_source_data, by = "investment_address")
-
 total_proj_data <- dc_housing_investment %>% 
   group_by(investment_address) %>% 
   summarize(total_dmped_investment = sum(incentive_amount))
@@ -300,9 +268,9 @@ combined_data <-
          ami_0_30 = if_else((is.na(ami_0_30) & !is.na(ami_30)), ami_30, ami_0_30),
          ami_31_50 = if_else((is.na(ami_31_50) & !is.na(ami_50)), ami_50, ami_31_50),
          ami_51_80 = if_else((is.na(ami_51_80) & !is.na(ami_80) & !is.na(ami_60)), ami_60 + ami_80, ami_51_80),
-         total_funding_sources = if_else(is.na(all_dmped_funding), all_dhcd_funding, all_dmped_funding),
+         proj_funding_source = as.factor(if_else(is.na(incentive_name), funding_source1, incentive_name)),
          proj_lihtc_amount = if_else(dhcd_lihtc_amount > dmped_lihtc_amount, dhcd_lihtc_amount, dmped_lihtc_amount),
-         investment_year = if_else(is.na(dhcd_year) & !is.na(dmped_year), as.character(str_sub(dmped_year, -2, -1)), as.character(format(dhcd_year, '%y'))),
+         investment_year = as.factor(if_else(is.na(dhcd_year) & !is.na(dmped_year), as.character(str_sub(dmped_year, -2, -1)), as.character(format(dhcd_year, '%y')))),
          quadrant = str_sub(investment_address, -2, -1),
          quadrant = if_else(quadrant %in% c("NE", "NW", "SW", "SE"), quadrant, "NA")
          )
@@ -411,14 +379,13 @@ total_unit_investment_data %>%
 # I previously imputed 0 for projects that had NA values for total affordable housing produced as these only existed in the DMPED data set and are assumed to have not produced any housing (at any affordability levels) based on the description of the investments; I therefore repeat this for the other housing unit affordability level variables and the total_bedrooms variable
 
 prediction_data <- combined_data %>% 
-  select(ward, dc_residents_employed, num_cbes, total_bedrooms, ami_0_30, ami_31_50, ami_51_80, ami_81, market_rate_units, total_proj_investment, proj_lihtc_amount, total_proj_affordable, total_funding_sources, investment_year, quadrant) %>% 
+  select(total_proj_investment, proj_lihtc_amount, total_proj_affordable, quadrant, ami_0_30, ami_31_50, ami_51_80, ami_81, ward, dc_residents_employed, num_cbes, total_bedrooms, investment_year, proj_funding_source) %>% 
   mutate(ami_0_30 = if_else(total_proj_affordable == 0, 0, ami_0_30),
          ami_31_50 = if_else(total_proj_affordable == 0, 0, ami_31_50),
          ami_51_80 = if_else(total_proj_affordable == 0, 0, ami_51_80),
-         ami_81 = if_else(total_proj_affordable == 0, 0, ami_81),
-         market_rate_units = if_else(total_proj_affordable == 0, 0, market_rate_units),
-         total_bedrooms = if_else(total_proj_affordable == 0, 0, total_bedrooms)
+         ami_81 = if_else(total_proj_affordable == 0, 0, ami_81)
          )
+
 
 set.seed(20201212)
 # create a split object
@@ -447,19 +414,31 @@ nearZeroVar(predict_investment_train, saveMetrics = TRUE) %>%
   filter(nzv)
 
 # I'm also going to follow Boehmke and Greenwell's advice to "when in doubt, normalize"
-predict_investment_recipe <- recipe(total_proj_investment ~ ., data = predict_investment_train) %>%
+predict_investment_recipe <- 
+  recipe(total_proj_investment ~ ., data = predict_investment_train) %>%
   step_nzv(all_predictors()) %>% 
   step_bagimpute(all_predictors()) %>% 
   step_BoxCox(all_numeric()) %>% 
-  step_other(investment_year, threshold = 0.01, 
-             other = "other") %>%
-  step_other(total_proj_funding_sources, threshold = 0.1, 
+  step_other(investment_year, threshold = 0.10, 
+             other = "other") %>% 
+  step_other(proj_funding_source, threshold = 0.05, 
              other = "OTHER")
 
 # create resamples
 predict_investment_folds <- vfold_cv(data = predict_investment_train, v = 10)
 
-# create model object
+all_cores <- parallel::detectCores(logical = FALSE) - 1
+
+registerDoFuture()
+cl <- parallel::makeCluster(all_cores)
+plan(future::cluster, workers = cl)
+
+
+```
+
+
+```{r}
+# create Random Forest model object
 predict_investment_rf_mod <- 
     rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
     set_mode("regression") %>%
@@ -475,17 +454,10 @@ n_features <- length(setdiff(names(predict_investment_train), "total_proj_invest
 
 # create tuning grid for rf hyperparamters
 predict_investment_rf_grid <- expand.grid(
-  mtry = floor(n_features * c(.333)),
-  min_n = c(10), 
+  mtry = floor(n_features * c(.25, .333, .4)),
+  min_n = c(1, 5, 10), 
   trees = c(n_features*10)
 )
-
-
-all_cores <- parallel::detectCores(logical = FALSE) - 1
-
-registerDoFuture()
-cl <- parallel::makeCluster(all_cores)
-plan(future::cluster, workers = cl)
 
 # estimate models
 predict_investment_rf_res <- 
@@ -499,6 +471,38 @@ show_best(predict_investment_rf_res, "rmse", n = 10)
 
 ```
 
+
+```{r}
+
+# KNN Model
+
+# create model object
+predict_investment_knn_mod <-
+  nearest_neighbor(neighbors = tune()) %>%
+  set_engine(engine = "kknn") %>%
+  set_mode(mode = "regression")
+
+# create workflow
+predict_investment_knn_workflow <-
+  workflow() %>%
+  add_model(spec = predict_investment_knn_mod) %>%
+  add_recipe(recipe = predict_investment_recipe)
+
+# create tuning grid for knn hyperparameters
+predict_investment_knn_grid <- tibble(neighbors = c(7, 9, 11, 13))
+
+# estimate models
+predict_investment_knn_res <-
+  predict_investment_knn_workflow %>%
+  tune_grid(resamples = predict_investment_folds,
+            grid = predict_investment_knn_grid,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(rmse))
+
+show_best(predict_investment_knn_res, "rmse", n = 10)
+
+
+```
 
 ```{r}
 comparing_units <- combined_data %>% 
