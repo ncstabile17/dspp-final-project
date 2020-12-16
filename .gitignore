@@ -3,3 +3,4 @@
 *.user*
 *.Rproj*
 .Rproj.user
+/data
