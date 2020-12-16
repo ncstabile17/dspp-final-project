@@ -25,7 +25,8 @@ library(caret)
 library(tidymodels)
 library(ranger) 
 library(h2o)
-library(doFuture)
+library(vip)
+library(sf)
 ```
 
 ### Data Import and Cleaning
@@ -355,9 +356,70 @@ total_unit_investment_data %>%
 
 ```{r}
 
-
 # I can just use the Open Data Affordable Housing data set for mapping if I want to
 # It already has location information, but they don't match up well with the addresses from the other data sets
+
+dc_aff_housing_open <- 
+  read_csv("data/dc-aff-housing-open.csv", 
+                            col_type = cols(
+                              LATITUDE = col_character(),
+                              LONGITUDE = col_character()
+                            )) %>% 
+  rename_with(tolower) %>% 
+  filter(!is.na(address_id) & !is.na(longitude) & !is.na(latitude))
+
+dc_aff_housing_open <- st_as_sf(
+  dc_aff_housing_open,
+  coords = c("longitude", "latitude"),
+  crs = 4326,
+  remove = FALSE)
+
+dc_tracts <- st_read("data/Census_Tracts_in_2010.shp") %>% 
+  select(TRACT, GEOID, geometry)
+
+# Affordabl housing doesn't have tract or geoID information, adding additional data source
+dc_addresses <- st_read("data/Address_Points.csv") %>% 
+  select(address_id = ADDRESS_ID, TRACT = CENSUS_TRACT) %>% 
+  mutate(address_id = as.numeric(address_id))
+
+dc_aff_housing_open <- 
+  left_join(dc_aff_housing_open, dc_addresses, by = "address_id")
+
+dc_aff_housing_merged <- st_join(
+  dc_aff_housing_open, # points
+  dc_tracts, # polygons
+  join = st_within
+)
+
+dc_aff_housing_merged <- st_set_geometry(dc_aff_housing_merged, NULL)
+
+dc_aff_housing_merged_agg <- dc_aff_housing_merged %>%
+  group_by(GEOID) %>%
+  summarize(
+    total_affordable_units = sum(total_affordable_units),
+    total_0_30_ami = sum(affordable_units_at_0_30_ami)
+  )
+
+dc_aff_housing_merged_agg <- dc_tracts %>%
+  left_join(dc_aff_housing_merged_agg, by = "GEOID")
+
+dc_aff_housing_merged_agg %>% 
+  mutate(total_affordable_units = replace_na(total_affordable_units, 0)) %>% 
+  ggplot() +
+  geom_sf(aes(fill = total_affordable_units)) + 
+  scale_fill_continuous(
+    low = "white", high = "blue", name = "Total Affordable Housing Units since 2015"
+  ) +
+  theme_void()
+
+dc_aff_housing_merged_agg %>% 
+  mutate(total_0_30_ami = replace_na(total_0_30_ami, 0)) %>% 
+  ggplot() +
+  geom_sf(aes(fill = total_0_30_ami)) + 
+  scale_fill_continuous(
+    low = "white", high = "blue", name = "Total Deeply Affordable Housing Units since 2015"
+  ) +
+  theme_void()
 
 ```
 - Funding Sources
@@ -439,43 +501,6 @@ predict_investment_recipe <-
 
 
 ```{r}
-# Random Forest model to predict investment
-
-# create model object
-predict_investment_rf_mod <- 
-    rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
-    set_mode("regression") %>%
-    set_engine("ranger")
-
-# create workflow
-predict_investment_rf_workflow <-
-  workflow() %>%
-  add_model(spec = predict_investment_rf_mod) %>%
-  add_recipe(recipe = predict_investment_recipe)
-
-n_features <- length(setdiff(names(predict_investment_train), "total_proj_investment"))
-
-# create tuning grid for rf hyperparamters
-predict_investment_rf_grid <- expand.grid(
-  mtry = floor(n_features * c(.25, .333, .4)),
-  min_n = c(1, 5, 10), 
-  trees = c(n_features*10)
-)
-
-# estimate models
-predict_investment_rf_res <- 
-  predict_investment_rf_workflow %>%
-  tune_grid(resamples = aff_investment_folds,
-            grid = predict_investment_rf_grid,
-            control = control_grid(save_pred = TRUE),
-            metrics = metric_set(rmse))
-
-show_best(predict_investment_rf_res, "rmse", n = 10)
-
-```
-
-
-```{r}
 
 # KNN Model to predict investment
 
@@ -508,6 +533,99 @@ show_best(predict_investment_knn_res, "rmse", n = 10)
 ```
 
 ```{r}
+# Random Forest model to predict investment
+
+# create model object
+predict_investment_rf_mod <- 
+    rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+    set_mode("regression") %>%
+    set_engine("ranger", importance = "impurity")
+
+# create workflow
+predict_investment_rf_workflow <-
+  workflow() %>%
+  add_model(spec = predict_investment_rf_mod) %>%
+  add_recipe(recipe = predict_investment_recipe)
+
+n_features <- length(setdiff(names(predict_investment_train), "total_proj_investment"))
+
+# create tuning grid for rf hyperparamters
+predict_investment_rf_grid <- expand.grid(
+  mtry = floor(n_features * c(.25, .333, .4)),
+  min_n = c(1, 5, 10), 
+  trees = c(n_features*10)
+)
+
+# estimate models
+predict_investment_rf_res <- 
+  predict_investment_rf_workflow %>%
+  tune_grid(resamples = aff_investment_folds,
+            grid = predict_investment_rf_grid,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(rmse))
+
+show_best(predict_investment_rf_res, "rmse", n = 10)
+
+# Re-running model with best specification to get variable importance
+predict_investment_rf_mod_vip <- 
+    rand_forest(mtry = 3, trees = 130, min_n = 10) %>%
+    set_mode("regression") %>%
+    set_engine("ranger", importance = "impurity")
+
+# Fitting model to training data
+predict_investment_rf_fit_vip <-
+  workflow() %>%
+  add_model(spec = predict_investment_rf_mod_vip) %>%
+  add_recipe(recipe = predict_investment_recipe) %>% 
+  fit(aff_investment_train)
+
+# Plotting variable importance
+predict_investment_rf_fit_vip %>%
+  pull_workflow_fit() %>%
+  vip(num_features = 10)
+
+```
+
+```{r}
+
+# Boosted Tree model to predict investment in a project
+
+# create model object
+predict_investment_bt_mod <- 
+    rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+    set_mode("regression") %>%
+    set_engine("ranger")
+
+# create workflow
+predict_investment_rf_workflow <-
+  workflow() %>%
+  add_model(spec = predict_investment_rf_mod) %>%
+  add_recipe(recipe = predict_investment_recipe)
+
+n_features <- length(setdiff(names(predict_investment_train), "total_proj_investment"))
+
+# create tuning grid for rf hyperparamters
+predict_investment_rf_grid <- expand.grid(
+  mtry = floor(n_features * c(.25, .333, .4)),
+  min_n = c(1, 5, 10), 
+  trees = c(n_features*10)
+)
+
+# estimate models
+predict_investment_rf_res <- 
+  predict_investment_rf_workflow %>%
+  tune_grid(resamples = aff_investment_folds,
+            grid = predict_investment_rf_grid,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(rmse))
+
+show_best(predict_investment_rf_res, "rmse", n = 10)
+
+
+```
+
+
+```{r}
 
 # Predicting the affordable units in a project
 
@@ -537,8 +655,6 @@ predict_aff_units_recipe <-
 ```{r}
 
 # Random forest model to predict affordable housing units
-
-# Random Forest model to predict investment
 
 # create model object
 predict_aff_rf_mod <- 
@@ -570,6 +686,24 @@ predict_aff_rf_res <-
             metrics = metric_set(rmse))
 
 show_best(predict_aff_rf_res, "rmse", n = 10)
+
+# Re-running model with best specification to get variable importance
+predict_aff_rf_mod_vip <- 
+    rand_forest(mtry = 5, trees = 130, min_n = 1) %>%
+    set_mode("regression") %>%
+    set_engine("ranger", importance = "impurity")
+
+# Fitting model to training data
+predict_aff_rf_fit_vip <-
+  workflow() %>%
+  add_model(spec = predict_aff_rf_mod_vip) %>%
+  add_recipe(recipe = predict_aff_units_recipe) %>% 
+  fit(aff_investment_train)
+
+# Plotting variable importance
+predict_aff_rf_fit_vip %>%
+  pull_workflow_fit() %>%
+  vip(num_features = 10)
 
 ```
 
@@ -607,25 +741,12 @@ show_best(predict_aff_knn_res, "rmse", n = 10)
 
 
 ```{r}
-comparing_units <- combined_data %>% 
-  mutate(total_dmped_affordable = replace_na(total_dmped_affordable, 0),
-         total_dhcd_affordable = replace_na(total_dhcd_affordable, 0),
-         more_units = if_else(total_dhcd_affordable > total_dmped_affordable, "DHCD", "DMPED"),
-         unit_diff = total_dmped_affordable - total_dhcd_affordable,
-         total_units = replace_na(total_units, 0)) %>% 
-  filter(is.na(total_units))
 
 
          unit_cost = if_else(total_units > 0, total_proj_investment/total_units, 0),
          affordable_cost = if_else(total_proj_affordable > 0, total_proj_investment/total_proj_affordable, 0),
          ami_30_cost = if_else(ami_0_30 > 0, total_proj_investment/ami_30_ratio, 0)
 
-comparing_investment <- combined_data %>% 
-  mutate(total_dmped_investment = replace_na(total_dmped_investment, 0),
-         total_dhcd_investment = replace_na(total_dhcd_investment, 0),
-         bigger_investment = if_else(total_dhcd_investment > total_dmped_investment, "DHCD", "DMPED"),
-         invest_diff = total_dmped_investment - total_dhcd_investment) %>% 
-  select(investment_address, total_dmped_investment, total_dhcd_investment, invest_diff, bigger_investment)
 
 ```
 
