@@ -29,7 +29,11 @@ library(vip)
 library(sf)
 ```
 
-TODO: Add GBM model
+TODO: Add additional visualizations for evaluating the predicted values
+TODO: Add tables describing the error terms (differentiate between MAE and RMSE; show measures of central tendency; how RMSE compares to the range, quartiles, and standard deviation; show the range and quartiles of the error terms)
+TODO: Think about taking out the really large outlier(s) and redoing the models
+TODO: Add additional summary stats (either right at the beginning or before the models, maybe some of both)
+use summary() function
 TODO: Clean up comments and any extraneous code
 TODO: Make sure everything is formatted properly
 TODO: Add commentary and analysis and add to Github Pages
@@ -291,8 +295,7 @@ combined_data <-
 
 total_unit_investment_data <- combined_data %>% 
   filter(!is.na(total_units) & total_proj_investment > 0) %>% 
-  mutate(investment_per_unit = total_proj_investment/total_units,
-         investment_year = as.numeric(str_sub(`Projected or Actual Closing Date`, -2, -1)))
+  mutate(investment_per_unit = total_proj_investment/total_units)
 
 total_unit_investment_data %>% 
   ggplot(aes(x = total_proj_investment, 
@@ -316,17 +319,6 @@ total_unit_investment_data %>%
     binwidth = 10000) +
   scale_x_continuous(labels = comma) +
   facet_wrap(~ has_market_rate)
-
-total_unit_investment_data %>% 
-  mutate(investment_year = if_else((is.na(investment_year) & !is.na(year)), as.numeric(str_sub(year, -2, -1)), investment_year)) %>% 
-  ggplot() +
-  geom_histogram(
-    aes(x = investment_per_unit),
-    color="black", 
-    fill="white",
-    binwidth = 10000) +
-  scale_x_continuous(labels = comma) +
-  facet_wrap(~ investment_year)
 
 # Want to look at the investment per unit and relationship to number of affordable units produced
 total_unit_investment_data %>% 
@@ -382,7 +374,7 @@ dc_aff_housing_open <- st_as_sf(
 dc_tracts <- st_read("data/Census_Tracts_in_2010.shp") %>% 
   select(TRACT, GEOID, geometry)
 
-# Affordabl housing doesn't have tract or geoID information, adding additional data source
+# Affordable housing data doesn't have tract or geoID information, adding additional data source
 dc_addresses <- st_read("data/Address_Points.csv") %>% 
   select(address_id = ADDRESS_ID, TRACT = CENSUS_TRACT) %>% 
   mutate(address_id = as.numeric(address_id))
@@ -427,42 +419,48 @@ dc_aff_housing_merged_agg %>%
   theme_void()
 
 ```
-- Funding Sources
-- Ward
-- Quadrant
-- Total Affordable Units
-- 30% AMI Units
-- 50% AMI Units
-- 60% AMI Units
-- 80% AMI Units
-- Market Rate Units
-- Total Bedrooms
-- DC residents employed
-- Number of certified small businesses served
+
 
 ```{r}
 
-# Predicting amount of investment in a project and total affordable units
+# Predicting amount of investment in a project
 # I previously imputed 0 for projects that had NA values for total affordable housing produced as these only existed in the DMPED data set and are assumed to have not produced any housing (at any affordability levels) based on the description of the investments; I therefore repeat this for the other housing unit affordability level variables and the total_bedrooms variable
 
-prediction_data <- combined_data %>% 
+# Outcome variable is right-skewed so will normalize
+combined_data %>% 
+  filter(total_proj_investment > 0) %>% 
+  ggplot() +
+  geom_histogram(
+    aes(x = total_proj_investment),
+    bins = 75,
+    fill = "blue") +
+  scale_x_continuous(labels = comma) + 
+  theme_minimal()
+
+predict_investment_data <- combined_data %>% 
   select(total_proj_investment, proj_lihtc_amount, total_proj_affordable, quadrant, ami_0_30, ami_31_50, ami_51_80, ami_81, ward, dc_residents_employed, num_cbes, total_bedrooms, investment_year, proj_funding_source) %>% 
   mutate(ami_0_30 = if_else(total_proj_affordable == 0, 0, ami_0_30),
          ami_31_50 = if_else(total_proj_affordable == 0, 0, ami_31_50),
          ami_51_80 = if_else(total_proj_affordable == 0, 0, ami_51_80),
-         ami_81 = if_else(total_proj_affordable == 0, 0, ami_81)
-         )
+         ami_81 = if_else(total_proj_affordable == 0, 0, ami_81),
+         # As recommended in this thread (https://github.com/tidymodels/workflows/issues/63), I'm log transforming the outcome variable before the initial split
+         log_total_proj_investment = log(total_proj_investment)
+         ) %>% 
+  # remove any projects that didn't receive any investment
+  filter(total_proj_investment > 0) %>% 
+  select(-total_proj_investment)
+
 
 
 set.seed(20201212)
 # create a split object
-aff_investment_split <- initial_split(data = prediction_data, prop = 0.75)
+predict_investment_split <- initial_split(data = predict_investment_data, prop = 0.75)
 # create the training and testing data
-aff_investment_train <- training(x = aff_investment_split)
-aff_investment_test <- testing(x = aff_investment_split)
+predict_investment_train <- training(x = predict_investment_split)
+predict_investment_test <- testing(x = predict_investment_split)
 
 # create resamples
-aff_investment_folds <- vfold_cv(data = aff_investment_train, v = 5)
+predict_investment_folds <- vfold_cv(data = predict_investment_train, v = 10)
 
 
 ```
@@ -471,31 +469,23 @@ aff_investment_folds <- vfold_cv(data = aff_investment_train, v = 5)
 
 # Predicting investment in a project
 
-# Outcome variable is right-skewed so will normalize
-aff_investment_train %>% 
-  ggplot() +
-  geom_histogram(
-    aes(x = total_proj_investment),
-    bins = 50,
-    fill = "blue") +
-  scale_x_continuous(labels = comma) + 
-  theme_minimal()
-
 # Significant number of missing values across particular variables occur because I combine two data sets, and some projects were only present in one of the data sets which did not have data for particular variables including dc_residents_employed, num_cbes, total_bedrooms, total_funding_sources, and investment_year
 # I choose not to impute these with mean/median or with an algorithm because I'm not confident the other predictors would be very accurate at predicting the missing values for these variables and tree-based algorithms (which I'm planning to utilize) are able to handle missing values
-vis_miss(aff_investment_train, cluster = TRUE)
+vis_miss(predict_investment_train, cluster = TRUE)
 
 # I have no zero-variance predictors, but a few near-zero predictors so these will be filtered out as part of the recipe
-nearZeroVar(aff_investment_train, saveMetrics = TRUE) %>% 
+nearZeroVar(predict_investment_train, saveMetrics = TRUE) %>% 
   rownames_to_column() %>% 
   filter(nzv)
 
 # I'm also going to follow Boehmke and Greenwell's advice to "when in doubt, normalize"
 predict_investment_recipe <- 
-  recipe(total_proj_investment ~ ., data = aff_investment_train) %>%
+  recipe(log_total_proj_investment ~ ., data = predict_investment_train) %>%
   step_nzv(all_predictors()) %>% 
   step_bagimpute(all_predictors()) %>% 
-  step_BoxCox(all_numeric()) %>% 
+  step_BoxCox(all_numeric(), -all_outcomes()) %>% 
+ # transforming the outcome variable was causing problems with the predictions and couldn't figure it out in time
+ # step_log(all_outcomes(), skip = TRUE) %>% 
   step_other(investment_year, threshold = 0.10, 
              other = "other") %>% 
   step_other(proj_funding_source, threshold = 0.05, 
@@ -527,7 +517,7 @@ predict_investment_knn_grid <- tibble(neighbors = c(7, 9, 11, 13))
 # estimate models
 predict_investment_knn_res <-
   predict_investment_knn_workflow %>%
-  tune_grid(resamples = aff_investment_folds,
+  tune_grid(resamples = predict_investment_folds,
             grid = predict_investment_knn_grid,
             control = control_grid(save_pred = TRUE),
             metrics = metric_set(rmse))
@@ -564,7 +554,7 @@ predict_investment_rf_grid <- expand.grid(
 # estimate models
 predict_investment_rf_res <- 
   predict_investment_rf_workflow %>%
-  tune_grid(resamples = aff_investment_folds,
+  tune_grid(resamples = predict_investment_folds,
             grid = predict_investment_rf_grid,
             control = control_grid(save_pred = TRUE),
             metrics = metric_set(rmse))
@@ -573,19 +563,19 @@ show_best(predict_investment_rf_res, "rmse", n = 10)
 
 # Re-running model with best specification to get variable importance
 predict_investment_rf_mod_vip <- 
-    rand_forest(mtry = 3, trees = 130, min_n = 10) %>%
+    rand_forest(mtry = 4, trees = 140, min_n = 5) %>%
     set_mode("regression") %>%
     set_engine("ranger", importance = "impurity")
 
 # Fitting model to training data
-predict_investment_rf_fit_vip <-
+predict_investment_rf_fit <-
   workflow() %>%
   add_model(spec = predict_investment_rf_mod_vip) %>%
   add_recipe(recipe = predict_investment_recipe) %>% 
-  fit(aff_investment_train)
+  fit(predict_investment_train)
 
 # Plotting variable importance
-predict_investment_rf_fit_vip %>%
+predict_investment_rf_fit %>%
   pull_workflow_fit() %>%
   vip(num_features = 10)
 
@@ -593,7 +583,95 @@ predict_investment_rf_fit_vip %>%
 
 ```{r}
 
-# Boosted Tree model to predict investment in a project
+# Fitting the best model and making predictions with test data
+
+# create model object
+predict_investment_rf_best_mod <-
+  rand_forest(mtry = 4, trees = 140, min_n = 5) %>%
+  set_mode("regression") %>%
+  set_engine("ranger")
+
+predict_investment_rf_best_fit <-
+  workflow() %>%
+  add_model(spec = predict_investment_rf_best_mod) %>%
+  add_recipe(recipe = predict_investment_recipe) %>% 
+  fit(predict_investment_train)
+
+# make predictions with testing data
+predict_investment_rf_best_predictions <-
+  bind_cols(
+    predict_investment_test,
+    predict(object = predict_investment_rf_best_fit, new_data = predict_investment_test)
+  )
+
+# calculate the rmse for the testing data
+rmse(data = predict_investment_rf_best_predictions, 
+     truth = log_total_proj_investment, 
+     estimate = .pred)
+
+# undo log transform
+predict_investment_rf_best_predictions <- 
+  predict_investment_rf_best_predictions %>% 
+  mutate(total_proj_investment = exp(log_total_proj_investment),
+         predicted_proj_investment = exp(.pred),
+         abs_error = abs(total_proj_investment - predicted_proj_investment)) %>%  
+  filter(total_proj_investment < 200000000)
+
+# calculate RMSE after undoing log transformation of outcome variable
+rmse(data = predict_investment_rf_best_predictions, 
+     truth = total_proj_investment, 
+     estimate = predicted_proj_investment)
+
+mae(data = predict_investment_rf_best_predictions, 
+     truth = total_proj_investment, 
+     estimate = predicted_proj_investment)
+
+
+predict_investment_rf_best_predictions %>% 
+  ggplot() +
+  geom_point(
+    aes(x = predicted_proj_investment, y = total_proj_investment),
+    alpha = .5) +
+  scale_x_continuous(labels = comma) + 
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+predict_investment_rf_best_predictions %>% 
+  ggplot() +
+  geom_point(
+    aes(x = total_proj_investment, y = abs_error),
+    alpha = .5) +
+  scale_x_continuous(labels = comma) + 
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+predict_investment_rf_best_predictions %>% 
+  ggplot() + 
+  geom_histogram (
+    aes(x = abs_error),
+    bins = 75
+  ) +
+  # Add mean line
+  geom_vline(
+    aes(xintercept = mean(abs_error)),
+    color = "blue",
+    linetype = "dashed",
+    size = 1) +
+  scale_x_continuous(labels = comma) + 
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+
+summary(predict_investment_data$log_total_proj_investment)
+
+# TODO: Add some sort of graph comparing predictions and estimate and undo log transform
+```
+Analysis: The model is much better at predicting small investments, which is what we would expect since the data is very right skewed and the vast majority of the investments were small numbers (talk about median, quartiles and things like that). Maybe add some more descriptive data at the top before other graphs (should use the summary function). 
+
+```{r includ = FALSE, eval = FALSE}
+
+# INCOMPLETE: Boosted Tree model to predict investment in a project
+# Couldn't get this to work in time
 
 # create model object
 predict_investment_xgboost_mod <- 
@@ -606,11 +684,22 @@ predict_investment_xgboost_mod <-
   set_engine("xgboost") %>% 
   set_mode("regression")
 
+predict_investment_xgboost_recipe <- 
+  recipe(total_proj_investment ~ ., data = predict_investment_train) %>%
+  step_integer(all_nominal()) %>%
+  step_nzv(all_predictors()) %>% 
+  step_bagimpute(all_predictors()) %>% 
+  step_BoxCox(all_numeric()) %>% 
+  step_other(investment_year, threshold = 0.10, 
+             other = "other") %>% 
+  step_other(proj_funding_source, threshold = 0.05, 
+             other = "OTHER")
+
 # create workflow
 predict_investment_xgboost_workflow <-
   workflow() %>%
   add_model(spec = predict_investment_xgboost_mod) %>%
-  add_recipe(recipe = predict_investment_recipe)
+  add_recipe(recipe = predict_investment_xgboost_recipe)
 
 predict_investment_xgboost_grid <- expand.grid(
   trees = c(100, 500, 1000),
@@ -623,7 +712,7 @@ predict_investment_xgboost_grid <- expand.grid(
 # estimate models
 predict_investment_xgboost_res <- 
   predict_investment_xgboost_workflow %>%
-  tune_grid(resamples = aff_investment_folds,
+  tune_grid(resamples = predict_investment_folds,
             grid = predict_investment_xgboost_grid,
             control = control_grid(save_pred = TRUE),
             metrics = metric_set(rmse))
@@ -650,13 +739,12 @@ xgboost_grid <-
 
 ```
 
-
 ```{r}
 
-# Predicting the affordable units in a project
+# Predicting affordable units in a project
 
 # Outcome variable is right skewed
-aff_investment_train %>% 
+combined_data %>% 
   ggplot() +
   geom_histogram(
     aes(x = total_proj_affordable),
@@ -665,73 +753,54 @@ aff_investment_train %>%
   scale_x_continuous(labels = comma) + 
   theme_minimal()
 
-predict_aff_units_recipe <- 
-  recipe(total_proj_affordable ~ ., data = predict_investment_train) %>%
-  step_nzv(all_predictors()) %>% 
-  step_bagimpute(all_predictors()) %>% 
-  step_BoxCox(all_numeric()) %>% 
-  step_other(investment_year, threshold = 0.10, 
-             other = "other") %>% 
-  step_other(proj_funding_source, threshold = 0.05, 
-             other = "OTHER")
+predict_aff_units_data <- combined_data %>% 
+  select(total_proj_investment, proj_lihtc_amount, total_proj_affordable, quadrant, ami_0_30, ami_31_50, ami_51_80, ami_81, ward, dc_residents_employed, num_cbes, total_bedrooms, investment_year, proj_funding_source) %>% 
+  mutate(ami_0_30 = if_else(total_proj_affordable == 0, 0, ami_0_30),
+         ami_31_50 = if_else(total_proj_affordable == 0, 0, ami_31_50),
+         ami_51_80 = if_else(total_proj_affordable == 0, 0, ami_51_80),
+         ami_81 = if_else(total_proj_affordable == 0, 0, ami_81),
+         log_total_proj_affordable = log(total_proj_affordable)
+         ) %>% 
+  # remove any projects that didn't have any affordable units
+  filter(total_proj_affordable > 0) %>% 
+  select(-total_proj_affordable)
+
+
+set.seed(20201212)
+# create a split object
+predict_aff_units_split <- initial_split(data = predict_aff_units_data, prop = 0.75)
+# create the training and testing data
+predict_aff_units_train <- training(x = predict_aff_units_split)
+predict_aff_units_test <- testing(x = predict_aff_units_split)
+
+# create resamples
+predict_aff_units_folds <- vfold_cv(data = predict_aff_units_train, v = 10)
 
 
 ```
+
 
 ```{r}
 
-# Random forest model to predict affordable housing units
+# Predicting the affordable units in a project
 
-# create model object
-predict_aff_rf_mod <- 
-    rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
-    set_mode("regression") %>%
-    set_engine("ranger")
+predict_aff_units_recipe <- 
+  recipe(log_total_proj_affordable ~ ., data = predict_aff_units_train) %>%
+  step_nzv(all_predictors()) %>% 
+  step_bagimpute(all_predictors()) %>% 
+  step_BoxCox(all_numeric(), -all_outcomes()) %>% 
+# transforming the outcome variable was causing problems with the predictions and couldn't figure it out in time
+ # step_log(all_outcomes(), skip = TRUE) %>% 
+  step_other(investment_year, threshold = 0.10, 
+             other = "other") %>% 
+  step_other(proj_funding_source, threshold = 0.05, 
+             other = "other") %>% 
+  step_other(ward, threshold = 0.10, 
+             other = "other")
 
-# create workflow
-predict_aff_rf_workflow <-
-  workflow() %>%
-  add_model(spec = predict_aff_rf_mod) %>%
-  add_recipe(recipe = predict_aff_units_recipe)
-
-n_features <- length(setdiff(names(aff_investment_train), "total_proj_affordable"))
-
-# create tuning grid for rf hyperparamters
-predict_aff_rf_grid <- expand.grid(
-  mtry = floor(n_features * c(.25, .333, .4)),
-  min_n = c(1, 5, 10), 
-  trees = c(n_features*10)
-)
-
-# estimate models
-predict_aff_rf_res <- 
-  predict_aff_rf_workflow %>%
-  tune_grid(resamples = aff_investment_folds,
-            grid = predict_aff_rf_grid,
-            control = control_grid(save_pred = TRUE),
-            metrics = metric_set(rmse))
-
-show_best(predict_aff_rf_res, "rmse", n = 10)
-
-# Re-running model with best specification to get variable importance
-predict_aff_rf_mod_vip <- 
-    rand_forest(mtry = 5, trees = 130, min_n = 1) %>%
-    set_mode("regression") %>%
-    set_engine("ranger", importance = "impurity")
-
-# Fitting model to training data
-predict_aff_rf_fit_vip <-
-  workflow() %>%
-  add_model(spec = predict_aff_rf_mod_vip) %>%
-  add_recipe(recipe = predict_aff_units_recipe) %>% 
-  fit(aff_investment_train)
-
-# Plotting variable importance
-predict_aff_rf_fit_vip %>%
-  pull_workflow_fit() %>%
-  vip(num_features = 10)
 
 ```
+
 
 ```{r}
 
@@ -755,7 +824,7 @@ predict_aff_knn_grid <- tibble(neighbors = c(7, 9, 11, 13))
 # estimate models
 predict_aff_knn_res <-
   predict_aff_knn_workflow %>%
-  tune_grid(resamples = aff_investment_folds,
+  tune_grid(resamples = predict_aff_units_folds,
             grid = predict_aff_knn_grid,
             control = control_grid(save_pred = TRUE),
             metrics = metric_set(rmse))
@@ -765,15 +834,134 @@ show_best(predict_aff_knn_res, "rmse", n = 10)
 
 ```
 
-
 ```{r}
 
+# Random forest model to predict affordable housing units
 
-         unit_cost = if_else(total_units > 0, total_proj_investment/total_units, 0),
-         affordable_cost = if_else(total_proj_affordable > 0, total_proj_investment/total_proj_affordable, 0),
-         ami_30_cost = if_else(ami_0_30 > 0, total_proj_investment/ami_30_ratio, 0)
+# create model object
+predict_aff_rf_mod <- 
+    rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+    set_mode("regression") %>%
+    set_engine("ranger")
 
+# create workflow
+predict_aff_rf_workflow <-
+  workflow() %>%
+  add_model(spec = predict_aff_rf_mod) %>%
+  add_recipe(recipe = predict_aff_units_recipe)
+
+n_features <- length(setdiff(names(predict_aff_units_train), "log_total_proj_affordable"))
+
+# create tuning grid for rf hyperparamters
+predict_aff_rf_grid <- expand.grid(
+  mtry = floor(n_features * c(.25, .333, .4)),
+  min_n = c(1, 5, 10), 
+  trees = c(n_features*10)
+)
+
+# estimate models
+predict_aff_rf_res <- 
+  predict_aff_rf_workflow %>%
+  tune_grid(resamples = predict_aff_units_folds,
+            grid = predict_aff_rf_grid,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(rmse))
+
+show_best(predict_aff_rf_res, "rmse", n = 10)
+
+# Re-running model with best specification to get variable importance
+predict_aff_rf_mod_vip <- 
+    rand_forest(mtry = 5, trees = 130, min_n = 1) %>%
+    set_mode("regression") %>%
+    set_engine("ranger", importance = "impurity")
+
+# Fitting model to training data
+predict_aff_rf_fit_vip <-
+  workflow() %>%
+  add_model(spec = predict_aff_rf_mod_vip) %>%
+  add_recipe(recipe = predict_aff_units_recipe) %>% 
+  fit(predict_aff_units_train)
+
+# Plotting variable importance
+predict_aff_rf_fit_vip %>%
+  pull_workflow_fit() %>%
+  vip(num_features = 10)
 
 ```
+```{r}
+
+# Fitting the best model and making predictions with test data
+
+# create model object
+predict_aff_rf_best_mod <-
+  rand_forest(mtry = 5, trees = 130, min_n = 1) %>%
+  set_mode("regression") %>%
+  set_engine("ranger")
+
+predict_aff_rf_best_fit <-
+  workflow() %>%
+  add_model(spec = predict_aff_rf_best_mod) %>%
+  add_recipe(recipe = predict_aff_units_recipe) %>% 
+  fit(predict_aff_units_train)
+
+# make predictions with testing data
+predict_aff_rf_best_predictions <-
+  bind_cols(
+    predict_aff_units_test,
+    predict(object = predict_aff_rf_best_fit, new_data = predict_aff_units_test)
+  )
+
+# calculate the rmse for the testing data
+rmse(data = predict_aff_rf_best_predictions, 
+     truth = log_total_proj_affordable, 
+     estimate = .pred)
+
+# undo log transform
+predict_aff_rf_best_predictions <- 
+  predict_aff_rf_best_predictions %>% 
+  mutate(total_proj_affordable = exp(log_total_proj_affordable),
+         predicted_proj_affordable = exp(.pred),
+         abs_error = abs(total_proj_affordable - predicted_proj_affordable)) 
+#  filter(total_proj_affordable < 500)
+
+# calculate RMSE after undoing log transformation of outcome variable
+rmse(data = predict_aff_rf_best_predictions, 
+     truth = total_proj_affordable, 
+     estimate = predicted_proj_affordable)
+
+mae(data = predict_aff_rf_best_predictions, 
+     truth = total_proj_affordable, 
+     estimate = predicted_proj_affordable)
+
+predict_aff_rf_best_predictions %>% 
+  ggplot() +
+  geom_point(
+    aes(x = total_proj_affordable, y = abs_error),
+    alpha = .5) +
+  scale_x_continuous(labels = comma) + 
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+predict_aff_rf_best_predictions %>% 
+  ggplot() + 
+  geom_histogram (
+    aes(x = abs_error),
+    bins = 75
+  ) +
+  # Add mean line
+  geom_vline(
+    aes(xintercept = mean(abs_error)),
+    color = "blue",
+    linetype = "dashed",
+    size = 1) +
+  scale_x_continuous(labels = comma) + 
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+
+
+# TODO: Add some sort of graph comparing predictions and estimate and undo log transform
+     
+```
+
 
 
