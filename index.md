@@ -10,7 +10,7 @@ For this analysis, I combine multiple sources produced by the DC government. The
 
 The second source is a [database of affordable housing projects projects](https://octo.quickbase.com/db/bit4krbdh?a=q&qid=44) maintained by the DC Department of Housing and Community Development. These projects span a number of years, but most are after 2010. 
 
-The final source is a data set of [affordable housing production and preservation projects](https://opendata.dc.gov/datasets/affordable-housing) that encompasses comprehensively covers affordable housing projects which started or completed since January of 2015. The data includes affordable housing projects (production and preservation, rental and for-sale) which were subsidized by DMPED, DHCD, DCHFA, or DCHA, and those which were produced as a result of Planned Unit Development (PUD) proffers or Inclusionary Zoning (IZ) requirements. This data was used only for mapping affordable housing projects.
+The final source is a data set of [affordable housing production and preservation projects](https://opendata.dc.gov/datasets/affordable-housing) that encompasses affordable housing projects which started or completed since January of 2015. The data includes affordable housing projects which were subsidized by DMPED, DHCD, DCHFA, or DCHA, and those which were produced as a result of Planned Unit Development (PUD) proffers or Inclusionary Zoning (IZ) requirements. This data was used only for mapping affordable housing projects.
 
 **Full Github Repository:** [DSPP Final Project](https://github.com/ncstabile17/dspp-final-project)
 
