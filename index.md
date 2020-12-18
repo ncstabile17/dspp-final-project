@@ -1,3 +1,11 @@
+---
+title: "Sections"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
 ## Welcome to GitHub Pages
 
 You can use the [editor on GitHub](https://github.com/ncstabile17/dspp-final-project/edit/gh-pages/index.md) to maintain and preview the content for your website in Markdown files.
