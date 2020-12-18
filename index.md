@@ -14,6 +14,8 @@ The final source is a data set of [affordable housing production and preservatio
 
 **Full Github Repository:** [DSPP Final Project](https://github.com/ncstabile17/dspp-final-project)
 
+The full analysis can also be [read alongside the code that produced the figures.](/final-project.html)
+
 ## Visualizing Project Investment and Affordable Unit Production
 
 Given the limited local government funds available and the sizable need for housing in general, and affordable housing in particular, it is imperative that investments are made in a way that maximizes public benefit. Below I plot the relationship between government investment in a project and the total number of housing units produced. There is a weak positive relationship with significant variance between projects. These differences between projects deserves further research to determine the different factors that lead to a greater return for government investment.  
