@@ -32,17 +32,17 @@ We also might expect that there would be relationships between different levels 
 
 ![Figure 4](/4-deeply-affordable-efficiency.png)
 
-![Figure 5](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/5-moderate-efficiency.png)
+![Figure 5](/5-moderate-efficiency.png)
 
 ## Mapping Affordable Housing Production
 
 I use a third data set to map affordable housing production since 2015. As has been emphasized in previous research on housing in DC, new affordable housing construction has been concentrated in areas east of the Anacostia River and in the central part of DC. While many Census tracts have received some affordable housing production, there has been a notable lack of affordable housing production in areas west of Rock Creek Park. 
 
-![Figure 6](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/6-affordable-map.png)
+![Figure 6](/6-affordable-map.png)
 
 The distribution of deeply affordable housing (available to those making less than 30% AMI) is even more concentrated in particular Census tracts and less evenly spread throughout the city. This is likely due in part to the fact that many of these units are replacement units for public housing redevelopment projects, which are typically very large developments. 
 
-![Figure 7](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/7-deeply-affordable-map.png)
+![Figure 7](/7-deeply-affordable-map.png)
 
 ## Predicting DC Government Investment by Project
 
@@ -50,43 +50,43 @@ I construct two machine learning models to predict the amount of DC government i
 
 Notably, these investments are heavily right-skewed, with most investments under \$1.5M and a long tail reaching a maximum of over \$215M for one project. Due to this skew, I log-transform the project investment variable before building my predictive models. 
 
-![Figure 8](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/8-investment-hist.png)
+![Figure 8](/8-investment-hist.png)
 
-![Figure 9](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/9-investment-table.png)
+![Figure 9](/9-investment-table.png)
 
 As can be seen in the below visualization of missing values across the data set, there were a number of variables that were contained in one data set but not the other, leading to projects that had missing values for these variables. These were imputed as part of the preprocessing steps. 
 
-![Figure 10](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/10-missing-data.png)
+![Figure 10](/10-missing-data.png)
 
 I first train a K-Nearest Neighbor model, which outperforms a previous KNN model I conducted on just one of the data sets. These improvements are likely due to the additional data as well as additional preprocessing steps conducted. The root mean squared error term is not easily interpretable because it is in log-units, which will be reversed in a later step for further model evaluation. 
 
 I then train a Random Forest model to predict project investment. This model performs better than the KNN model based on a lower RMSE value. I also visualize the variable importance for the RF model, which shows that total affordable housing units, amount of Low Income Housing Tax Credit investment, units at 30% AMI, and the project funding source play the most important roles in the model. While the initial visualizations appeared to show that there was not much of a relationship between investment and affordable units or deeply affordable units, this predictive model relied heavily on these two variables suggesting the possibility of some relationship. 
 
-![Figure 11](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/11-investment-vip.png)
+![Figure 11](/11-investment-vip.png)
 
 Finally, I use the identified best model to make predictions on the testing data set and then undo the log transformation to allow for further analysis. With a root mean squared error of \$24,544,726	this model does not initially appear to perform very well considering that the vast majority of investments were well below this amount. Upon closer analysis, however, we see that the mean absolute error was much lower at \$9,182,117. While still relatively high compared to most investments, this demonstrates the impact of outlier projects that were significantly larger than most other projects. This can be seen further by plotting the absolute error for individual projects against the actual investment and by considering the distribution of absolute error. We can see that for many project investment predictions there was relatively low error. Based on the composition of the data set, it makes sense that the model would perform better with the lower investment amounts. 
 
-![Figure 12](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/12-investment-error.png)
+![Figure 12](/12-investment-error.png)
 
-![Figure 13](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/13-investment-error-dist.png)
+![Figure 13](/13-investment-error-dist.png)
 
 ## Predicting Affordable Unit Production by Project
 
 Similarly, I next produce a model to predict the number of affordable housing units produced by project. The number of affordable units per project is also right-skewed in the data with the majority of projects producing fewer than 60 units of affordable housing, but with a few producing over 500.  
 
-![Figure 14](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/14-unit-hist.png)
+![Figure 14](/14-unit-hist.png)
 
-![Figure 15](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/15-aff-units-table.png)
+![Figure 15](/15-aff-units-table.png)
 
 I first train multiple specifications of a K-Nearest Neighbor model. I then train a number of specifications of a Random Forest model, which signficantly outperforms the KNN model. Again, the root mean squared error term is not initially meaningfully interpretable because of the log transformation of the outcome variable. Total bedroom, units at 81% AMI, and units at 51-80% AMI are the most important variables for the model. This is unsurprising as these all directly contribute to the total affordable units in a project or are very closely correlated. 
 
-![Figure 16](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/16-affordable-vip.png)
+![Figure 16](/16-affordable-vip.png)
 
 After selecting the optimal Random Forest model specification, I use this model to make predictions for the test data. After undoing the log transformation, the root mean squared error is approximately 51 units. This model performs better in comparison to the median than the model to predict investment in projects. Similarly, though, the mean absolute error is significantly lower with a value of approximately 19 units. This is a fairly good margin of error except for the smallest of projects. 
 
 The model does somewhat better at predicting projects in the middle of the distribution than the model for predicting investment. This is likely due to the fact that the affordable units per project were not as severely skewed as the investment per project. Overall, this model performs somewhat well and could be used as a way to flag particular projects that are proposed to produce a number of affordable units that are far outside the predictions of the model. 
 
-![Figure 17](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/17-aff-error.png)
+![Figure 17](/17-aff-error.png)
 
-![Figure 18](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/18-aff-error-dist.png)
+![Figure 18](/18-aff-error-dist.png)
 
