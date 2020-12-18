@@ -1,12 +1,8 @@
----
-title: "Habits"
-output:
-  html_document:
-    toc: true
-    toc_float:
-      collapsed: false
-      smooth_scroll: false
----
+- Item 1
+- Item 2
+- Item 3
+* TOC
+{:toc}
 
 ## Welcome to GitHub Pages
 
