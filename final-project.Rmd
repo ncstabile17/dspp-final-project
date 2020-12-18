@@ -1,10 +1,10 @@
 ---
 title: "DSPP Final Project"
 author: "Nick Stabile"
-date: "11/13/2020"
+date: "12/17/2020"
 output: html_document
 ---
-**Data Source:** [DC FY19 Economic Development Return on Investment Data spreadsheet](https://dmped.dc.gov/sites/default/files/dc/sites/dmped/publication/attachments/Return%20on%20Investment%20Data_FY15-19_v3.xlsx)
+**Data Sources:** [DC FY19 Economic Development Return on Investment Data spreadsheet](https://dmped.dc.gov/sites/default/files/dc/sites/dmped/publication/attachments/Return%20on%20Investment%20Data_FY15-19_v3.xlsx)
 
 **Data Author:** Office of the Deputy Mayor for Planning and Economic Development (DMPED)
 
@@ -27,13 +27,13 @@ library(ranger)
 library(xgboost)
 library(vip)
 library(sf)
+library(gtsummary)
+library(ggpubr)
+library(viridis)
+library(RColorBrewer)
 ```
 
-TODO: Add additional visualizations for evaluating the predicted values
-TODO: Add tables describing the error terms (differentiate between MAE and RMSE; show measures of central tendency; how RMSE compares to the range, quartiles, and standard deviation; show the range and quartiles of the error terms)
-TODO: Think about taking out the really large outlier(s) and redoing the models
-TODO: Add additional summary stats (either right at the beginning or before the models, maybe some of both)
-use summary() function
+TODO: Mention taking out the really large outlier(s) and redoing the models
 TODO: Clean up comments and any extraneous code
 TODO: Make sure everything is formatted properly
 TODO: Add commentary and analysis and add to Github Pages
@@ -147,7 +147,7 @@ dc_housing_investment$investment_address <- str_remove_all(dc_housing_investment
 
 ```
 
-```{r}
+```{r warning = FALSE, message = FALSE, results = FALSE}
 
 # Doing similar importing and cleaning for additional project data that has market rate unit data
 affordable_proj_market_rate <- read_csv("data/affordable-projects-market-rate.csv") %>% 
@@ -232,7 +232,7 @@ affordable_proj_market_rate$investment_address <- str_remove_all(affordable_proj
 
 ```
 
-```{r}
+```{r warning = FALSE, message = FALSE, results = FALSE}
 
 # Getting total investment data by project for both data sets
 
@@ -288,9 +288,9 @@ combined_data <-
 
 ```
 
-```{r}
+```{r warning = FALSE, message = FALSE}
 
-# I want to plot the investment and total unit production
+# Plotting project investment, total unit production, and investment efficiency
 # For this, I exclude projects that did not produce any housing (N = 147), projects without investment data (N = 85), and those that produced affordable units, but did not have clear data on total units for the project (N = 30)
 
 total_unit_investment_data <- combined_data %>% 
@@ -298,15 +298,19 @@ total_unit_investment_data <- combined_data %>%
   mutate(investment_per_unit = total_proj_investment/total_units)
 
 total_unit_investment_data %>% 
+  filter(total_units > 0) %>% 
   ggplot(aes(x = total_proj_investment, 
         y = total_units)) +
   geom_point(
     aes(color = if_else(market_rate_units > 0, "Yes", "No"))) +
-  geom_smooth(method=lm) +
-  labs(title = "Total Investment by Affordable Units",
+  geom_smooth(method = lm, se = FALSE) +
+  stat_cor(aes(label = ..rr.label..), geom = "label") +
+  labs(title = "Weak positive relationship between project investment and affordable units",
        color = "Project with Market Rate Units") +
-  scale_x_continuous(labels = comma) +
+  scale_x_continuous(labels = dollar_format()) +
   scale_color_manual(values = c("black", "red")) +
+  xlab('Total Government Investment in Project') +
+  ylab('Total Housing Units') +
   theme_minimal()
 
 total_unit_investment_data %>% 
@@ -314,44 +318,65 @@ total_unit_investment_data %>%
   ggplot() +
   geom_histogram(
     aes(x = investment_per_unit),
-    color="black", 
-    fill="white",
+    fill="blue",
     binwidth = 10000) +
-  scale_x_continuous(labels = comma) +
-  facet_wrap(~ has_market_rate)
+  scale_x_continuous(labels = dollar_format()) +
+  xlab("Investment Amount Per Unit Produced") +
+  ggtitle("No difference in investment efficiency for projects with market rate units") +
+  facet_wrap(~ has_market_rate,
+             labeller = labeller(has_market_rate = c("FALSE" = "No Market Rate Units", "TRUE" = "Contains Market Rate Units"))
+             ) +
+  theme_light() + 
+  theme(panel.spacing.x = unit(1, "cm"))
 
 # Want to look at the investment per unit and relationship to number of affordable units produced
 total_unit_investment_data %>% 
+  filter(total_proj_affordable > 0) %>% 
   ggplot(aes(x = investment_per_unit, 
         y = total_proj_affordable)) +
   geom_point() +
-  geom_smooth(method=lm) +
-  labs(title = "Total Investment by Affordable Units") +
-  scale_x_continuous(labels = comma) +
+  geom_smooth(method = lm, se = FALSE) +
+  stat_cor(aes(label = ..rr.label..), geom = "label") +
+  labs(title = "No relationship between investment efficiency and affordable units in project",
+       color = "Project with Market Rate Units") +
+  scale_x_continuous(labels = dollar_format()) +
+  xlab('Government Investment Per Unit Produced') +
+  ylab('Total Affordable Units') +
   theme_minimal()
 
 total_unit_investment_data %>% 
+  filter(ami_0_30 > 0) %>% 
   ggplot(aes(x = investment_per_unit, 
         y = ami_0_30)) +
   geom_point() +
-  geom_smooth(method=lm) +
-  labs(title = "Total Investment by Affordable Units") +
-  scale_x_continuous(labels = comma) +
+  geom_smooth(method = lm, se = FALSE) +
+  stat_cor(aes(label = ..rr.label..), geom = "label") +
+  labs(title = "No relationship between investment efficiency and deeply affordable units in project",
+       color = "Project with Market Rate Units") +
+  scale_x_continuous(labels = dollar_format()) +
+  xlab('Government Investment Per Unit Produced') +
+  ylab('Total 30% AMI Affordable Units') +
   theme_minimal()
 
 total_unit_investment_data %>% 
+  mutate(moderate_market_units = (ami_81 + market_rate_units)) %>% 
+  filter(moderate_market_units > 0) %>% 
   ggplot(aes(x = investment_per_unit, 
-        y = ami_81)) +
+        y = moderate_market_units)) +
   geom_point() +
-  geom_smooth(method=lm) +
-  labs(title = "Total Investment by Affordable Units") +
-  scale_x_continuous(labels = comma) +
+  geom_smooth(method = lm, se = FALSE) +
+  stat_cor(aes(label = ..rr.label..), geom = "label") +
+  labs(title = "No relationship between investment efficiency and moderate income units in project",
+       color = "Project with Market Rate Units") +
+  scale_x_continuous(labels = dollar_format()) +
+  xlab('Government Investment Per Unit Produced') +
+  ylab('Total 81%+ AMI Units') +
   theme_minimal()
   
 
 ```
 
-```{r}
+```{r warning = FALSE, message = FALSE}
 
 # I can just use the Open Data Affordable Housing data set for mapping if I want to
 # It already has location information, but they don't match up well with the addresses from the other data sets
@@ -403,19 +428,17 @@ dc_aff_housing_merged_agg <- dc_tracts %>%
 dc_aff_housing_merged_agg %>% 
   mutate(total_affordable_units = replace_na(total_affordable_units, 0)) %>% 
   ggplot() +
-  geom_sf(aes(fill = total_affordable_units)) + 
-  scale_fill_continuous(
-    low = "white", high = "blue", name = "Total Affordable Housing Units since 2015"
-  ) +
+  geom_sf(aes(fill = total_affordable_units)) +
+  scale_fill_distiller(direction = 1, name="Affordable Housing Units Produced", palette = "YlGnBu") +
+  ggtitle("Affordable housing production concentrated east of Anacostia River and in center of city") +
   theme_void()
 
 dc_aff_housing_merged_agg %>% 
   mutate(total_0_30_ami = replace_na(total_0_30_ami, 0)) %>% 
   ggplot() +
   geom_sf(aes(fill = total_0_30_ami)) + 
-  scale_fill_continuous(
-    low = "white", high = "blue", name = "Total Deeply Affordable Housing Units since 2015"
-  ) +
+  scale_fill_distiller(direction = 1, name="Deeply Affordable Housing Units Produced", palette = "YlGnBu") +
+  ggtitle("Deeply affordable housing production even more concentrated in particular Census tracts") +
   theme_void()
 
 ```
@@ -432,10 +455,30 @@ combined_data %>%
   ggplot() +
   geom_histogram(
     aes(x = total_proj_investment),
-    bins = 75,
+    bins = 200,
     fill = "blue") +
-  scale_x_continuous(labels = comma) + 
+  scale_x_continuous(labels = dollar_format()) + 
+  xlab('Total Government Investment in Project') +
+  ylab('Project Count') +
+  ggtitle(label = 'Project investment concentrated at low amounts', subtitle = 'The majority of DC Government investments are for relatively small amounts') +
   theme_minimal()
+
+combined_data %>% 
+  select(total_proj_investment) %>% 
+  filter(total_proj_investment > 0) %>% 
+  tbl_summary(
+    label = list(total_proj_investment ~ "Project Investment"),
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous() ~ c("{N_nonmiss}",
+                                     "{median}",
+                                     "{p25}", 
+                                     "{p75}", 
+                                     "{min}", "{max}")
+  ) %>% 
+  modify_header(
+    update = list(label ~ "**Variable**",
+                  stat_0 ~ "")
+  )
 
 predict_investment_data <- combined_data %>% 
   select(total_proj_investment, proj_lihtc_amount, total_proj_affordable, quadrant, ami_0_30, ami_31_50, ami_51_80, ami_81, ward, dc_residents_employed, num_cbes, total_bedrooms, investment_year, proj_funding_source) %>% 
@@ -478,14 +521,10 @@ nearZeroVar(predict_investment_train, saveMetrics = TRUE) %>%
   rownames_to_column() %>% 
   filter(nzv)
 
-# I'm also going to follow Boehmke and Greenwell's advice to "when in doubt, normalize"
 predict_investment_recipe <- 
   recipe(log_total_proj_investment ~ ., data = predict_investment_train) %>%
   step_nzv(all_predictors()) %>% 
   step_bagimpute(all_predictors()) %>% 
-  step_BoxCox(all_numeric(), -all_outcomes()) %>% 
- # transforming the outcome variable was causing problems with the predictions and couldn't figure it out in time
- # step_log(all_outcomes(), skip = TRUE) %>% 
   step_other(investment_year, threshold = 0.10, 
              other = "other") %>% 
   step_other(proj_funding_source, threshold = 0.05, 
@@ -614,8 +653,7 @@ predict_investment_rf_best_predictions <-
   predict_investment_rf_best_predictions %>% 
   mutate(total_proj_investment = exp(log_total_proj_investment),
          predicted_proj_investment = exp(.pred),
-         abs_error = abs(total_proj_investment - predicted_proj_investment)) %>%  
-  filter(total_proj_investment < 200000000)
+         abs_error = abs(total_proj_investment - predicted_proj_investment))
 
 # calculate RMSE after undoing log transformation of outcome variable
 rmse(data = predict_investment_rf_best_predictions, 
@@ -626,24 +664,21 @@ mae(data = predict_investment_rf_best_predictions,
      truth = total_proj_investment, 
      estimate = predicted_proj_investment)
 
-
-predict_investment_rf_best_predictions %>% 
-  ggplot() +
-  geom_point(
-    aes(x = predicted_proj_investment, y = total_proj_investment),
-    alpha = .5) +
-  scale_x_continuous(labels = comma) + 
-  scale_y_continuous(labels = comma) +
-  theme_minimal()
+summary(predict_investment_data$total_proj_investment)
 
 predict_investment_rf_best_predictions %>% 
   ggplot() +
   geom_point(
     aes(x = total_proj_investment, y = abs_error),
     alpha = .5) +
-  scale_x_continuous(labels = comma) + 
-  scale_y_continuous(labels = comma) +
+  scale_x_continuous(labels = dollar_format()) + 
+  scale_y_continuous(labels = dollar_format()) +
+  xlab("Government Investment in Project") +
+  ylab("Absolute Error of Prediction") + 
+  ggtitle("Model accuracy decreases with increasing investment") +
   theme_minimal()
+
+mean_line <- data.frame(vlines = c(25376579), labels = c("Mean: 9,182,117"))
 
 predict_investment_rf_best_predictions %>% 
   ggplot() + 
@@ -656,15 +691,14 @@ predict_investment_rf_best_predictions %>%
     aes(xintercept = mean(abs_error)),
     color = "blue",
     linetype = "dashed",
-    size = 1) +
-  scale_x_continuous(labels = comma) + 
-  scale_y_continuous(labels = comma) +
+    size = 1, 
+    show.legend = TRUE) +
+  geom_text(data = mean_line, aes(x = vlines, y = 10, label = labels)) +
+  scale_x_continuous(labels = dollar_format()) + 
+  xlab("Absolute Error") + 
+  ggtitle("Distribution of absolute error is right skewed") +
   theme_minimal()
 
-
-summary(predict_investment_data$log_total_proj_investment)
-
-# TODO: Add some sort of graph comparing predictions and estimate and undo log transform
 ```
 Analysis: The model is much better at predicting small investments, which is what we would expect since the data is very right skewed and the vast majority of the investments were small numbers (talk about median, quartiles and things like that). Maybe add some more descriptive data at the top before other graphs (should use the summary function). 
 
@@ -745,13 +779,34 @@ xgboost_grid <-
 
 # Outcome variable is right skewed
 combined_data %>% 
+  filter(total_proj_affordable > 0) %>% 
   ggplot() +
   geom_histogram(
     aes(x = total_proj_affordable),
-    bins = 50,
+    bins = 100,
     fill = "blue") +
   scale_x_continuous(labels = comma) + 
+  xlab('Affordable Units Produced in Project') +
+  ylab('Project Count') +
+  ggtitle(label = 'Most affordable housing projects are relatively small') +
   theme_minimal()
+
+combined_data %>% 
+  select(total_proj_affordable) %>% 
+  filter(total_proj_affordable > 0) %>% 
+  tbl_summary(
+    label = list(total_proj_affordable ~ "Project Affordable Units"),
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous() ~ c("{N_nonmiss}",
+                                     "{median}",
+                                     "{p25}", 
+                                     "{p75}", 
+                                     "{min}", "{max}")
+  ) %>% 
+  modify_header(
+    update = list(label ~ "**Variable**",
+                  stat_0 ~ "")
+  )
 
 predict_aff_units_data <- combined_data %>% 
   select(total_proj_investment, proj_lihtc_amount, total_proj_affordable, quadrant, ami_0_30, ami_31_50, ami_51_80, ami_81, ward, dc_residents_employed, num_cbes, total_bedrooms, investment_year, proj_funding_source) %>% 
@@ -788,9 +843,6 @@ predict_aff_units_recipe <-
   recipe(log_total_proj_affordable ~ ., data = predict_aff_units_train) %>%
   step_nzv(all_predictors()) %>% 
   step_bagimpute(all_predictors()) %>% 
-  step_BoxCox(all_numeric(), -all_outcomes()) %>% 
-# transforming the outcome variable was causing problems with the predictions and couldn't figure it out in time
- # step_log(all_outcomes(), skip = TRUE) %>% 
   step_other(investment_year, threshold = 0.10, 
              other = "other") %>% 
   step_other(proj_funding_source, threshold = 0.05, 
@@ -802,7 +854,7 @@ predict_aff_units_recipe <-
 ```
 
 
-```{r}
+```{r error = FALSE}
 
 # KNN Model to predict affordable units in project
 
@@ -834,7 +886,7 @@ show_best(predict_aff_knn_res, "rmse", n = 10)
 
 ```
 
-```{r}
+```{r warning = FALSE, message = FALSE, error = FALSE}
 
 # Random forest model to predict affordable housing units
 
@@ -922,7 +974,6 @@ predict_aff_rf_best_predictions <-
   mutate(total_proj_affordable = exp(log_total_proj_affordable),
          predicted_proj_affordable = exp(.pred),
          abs_error = abs(total_proj_affordable - predicted_proj_affordable)) 
-#  filter(total_proj_affordable < 500)
 
 # calculate RMSE after undoing log transformation of outcome variable
 rmse(data = predict_aff_rf_best_predictions, 
@@ -933,6 +984,8 @@ mae(data = predict_aff_rf_best_predictions,
      truth = total_proj_affordable, 
      estimate = predicted_proj_affordable)
 
+summary(predict_aff_units_data$total_proj_affordable)
+
 predict_aff_rf_best_predictions %>% 
   ggplot() +
   geom_point(
@@ -940,7 +993,12 @@ predict_aff_rf_best_predictions %>%
     alpha = .5) +
   scale_x_continuous(labels = comma) + 
   scale_y_continuous(labels = comma) +
+  xlab("Total Affordable Units in Project") +
+  ylab("Absolute Error") +
+  ggtitle("Model more accurately predicts affordable units for smaller projects") +
   theme_minimal()
+
+mean_line <- data.frame(vlines = c(44), labels = c("Mean: 18.8"))
 
 predict_aff_rf_best_predictions %>% 
   ggplot() + 
@@ -954,13 +1012,13 @@ predict_aff_rf_best_predictions %>%
     color = "blue",
     linetype = "dashed",
     size = 1) +
+  geom_text(data = mean_line, aes(x = vlines, y = 12, label = labels)) +
   scale_x_continuous(labels = comma) + 
   scale_y_continuous(labels = comma) +
+  ggtitle("Distribution of absolute error is right skewed") +
+  xlab("Absolute Error") +
   theme_minimal()
 
-
-# TODO: Add some sort of graph comparing predictions and estimate and undo log transform
-     
 ```
 
 
