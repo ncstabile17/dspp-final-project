@@ -18,19 +18,19 @@ The final source is a data set of [affordable housing production and preservatio
 
 Given the limited local government funds available and the sizable need for housing in general, and affordable housing in particular, it is imperative that investments are made in a way that maximizes public benefit. Below I plot the relationship between government investment in a project and the total number of housing units produced. There is a weak positive relationship with significant variance between projects. These differences between projects deserves further research to determine the different factors that lead to a greater return for government investment.  
 
-![Figure 1](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/1-units-investment.png)
+![Figure 1](/1-units-investment.png)
 
 One possible variable that could contribute to a greater return for government investment is the presence of market rate housing in a project. These units could hypothetically offset some of the subsidy required by developers and thereby may necessitate less funding from the government. However, there were relatively few projects in the data sets examined that contained any market rate housing. This could be partly due to incomplete data as only one of the data sets used contained market rate unit data. Of the projects that did contain market rate units, they did not appear to differ significantly in the investment efficiency, calculated as the dollars of government investment per unit of affordable housing produced.
 
-![Figure 2](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/2-efficiency-comparison.png)
+![Figure 2](/2-efficiency-comparison.png)
 
 Similarly, we might expect that those projects with higher number of affordable housing units could require more investment per unit since these affordable units would require subsidy to offset the lower rents paid for them. Plotting the total affordable units in a project and the government investment per unit does not appear to show a relationship. 
 
 We also might expect that there would be relationships between different levels of affordability and the investment per unit produced. Affordable housing typically has income restrictions that are calculated based on the Area Median Income (AMI). For example some units that are considered "deeply" affordable housing are restricted to renters making below 30% AMI, while others are reserved for more moderate income renters making around 80% AMI. There does not appear to be a relationship between investment efficiency and either the number of deeply affordable housing units or moderately affordable housing units. 
 
-![Figure 3](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/3-affordable-efficiency.png)
+![Figure 3](/3-affordable-efficiency.png)
 
-![Figure 4](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/4-deeply-affordable-efficiency.png)
+![Figure 4](/4-deeply-affordable-efficiency.png)
 
 ![Figure 5](https://github.com/ncstabile17/dspp-final-project/blob/gh-pages/5-moderate-efficiency.png)
 
