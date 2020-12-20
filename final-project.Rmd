@@ -3,6 +3,8 @@ title: "DSPP Final Project"
 author: "Nick Stabile"
 date: "12/17/2020"
 output: html_document
+bibliography: bibliography.bib
+link-citations: true
 ---
 **Data Sources**
 
@@ -468,9 +470,8 @@ dc_aff_housing_merged_agg %>%
 
 ### Predicting DC Government Investment by Project
 
-I construct two machine learning models to predict the amount of DC government investment in a particular project. These include not just affordable housing projects, but other economic development investments including some related to small businesses, nonprofits, and arts and culture. 
-
-Notably, these investments are heavily right-skewed, with most investments under \$1.5M and a long tail reaching a maximum of over \$215M for one project. Due to this skew, I log-transform the project investment variable before building my predictive models. 
+I construct two machine learning models to predict the amount of DC government investment in a particular project. These include not just affordable housing projects, but other economic development investments including some related to small businesses, nonprofits, and arts and culture. As part of the modeling process, feature engineering was conducted and largely based on recommendations and techniques from @homl. 
+Notably, these investments are heavily right-skewed, with most investments under \$1.5M and a long tail reaching a maximum of over \$215M for one project. Due to this skew, I log-transform the project investment variable before building my predictive models. The stylized table below was produced by referencing a tutorial by @gtsummary.
 
 ```{r}
 
@@ -559,7 +560,7 @@ predict_investment_recipe <-
 
 
 ```
-I first train a K-Nearest Neighbor model, which outperforms a previous KNN model I conducted on just one of the data sets. These improvements are likely due to the additional data as well as additional preprocessing steps conducted. The root mean squared error term is not easily interpretable because it is in log-units, which will be reversed in a later step for further model evaluation. 
+I first train a K-Nearest Neighbor model using the `tidymodels` framework, which outperforms a previous KNN model I conducted on just one of the data sets. These improvements are likely due to the additional data as well as additional preprocessing steps conducted. The root mean squared error term is not easily interpretable because it is in log-units, which will be reversed in a later step for further model evaluation. 
 
 ```{r}
 
@@ -593,7 +594,7 @@ show_best(predict_investment_knn_res, "rmse", n = 10)
 
 ```
 
-I then train a Random Forest model to predict project investment. This model performs better than the KNN model based on a lower RMSE value. I also visualize the variable importance for the RF model, which shows that total affordable housing units, amount of Low Income Housing Tax Credit investment, units at 30% AMI, and the project funding source play the most important roles in the model. While the initial visualizations appeared to show that there was not much of a relationship between investment and affordable units or deeply affordable units, this predictive model relied heavily on these two variables suggesting the possibility of some relationship. 
+I then train a Random Forest model to predict project investment. The model implementation uses the `tidymodels` framework and was developed by referencing @homl and @tidymodel-tutorial. This model performs better than the KNN model based on a lower RMSE value. I also visualize the variable importance for the RF model, which shows that total affordable housing units, amount of Low Income Housing Tax Credit investment, units at 30% AMI, and the project funding source play the most important roles in the model. While the initial visualizations appeared to show that there was not much of a relationship between investment and affordable units or deeply affordable units, this predictive model relied heavily on these two variables suggesting the possibility of some relationship. 
 
 ```{r}
 # Random Forest model to predict investment
@@ -805,7 +806,9 @@ xgboost_grid <-
 
 ### Predicting Affordable Unit Production by Project
 
-Similarly, I next produce a model to predict the number of affordable housing units produced by project. The number of affordable units per project is also right-skewed in the data with the majority of projects producing fewer than 60 units of affordable housing, but with a few producing over 500.  
+Similarly, I next produce a model to predict the number of affordable housing units produced by project. The number of affordable units per project is also right-skewed in the data with the majority of projects producing fewer than 60 units of affordable housing, but with a few producing over 500. 
+
+As with the previous model, feature engineering was conducted and largely based on recommendations and techniques from @homl. The stylized table below was produced by referencing a tutorial by @gtsummary.
 
 ```{r}
 
@@ -921,7 +924,7 @@ show_best(predict_aff_knn_res, "rmse", n = 10)
 
 ```
 
-I then train a number of specifications of a Random Forest model, which signficantly outperforms the KNN model. Again, the root mean squared error term is not initially meaningfully interpretable because of the log transformation of the outcome variable. 
+I then train a number of specifications of a Random Forest model, which signficantly outperforms the KNN model. Similarly, the model implementation uses the `tidymodels` framework and was developed by referencing @homl and @tidymodel-tutorial. Again, the root mean squared error term is not initially meaningfully interpretable because of the log transformation of the outcome variable. 
 
 ```{r warning = FALSE, message = FALSE, error = FALSE}
 
@@ -1064,4 +1067,4 @@ predict_aff_rf_best_predictions %>%
 ```
 
 
-
+### References
