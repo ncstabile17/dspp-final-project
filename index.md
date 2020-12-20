@@ -50,7 +50,9 @@ The distribution of deeply affordable housing (available to those making less th
 
 I construct two machine learning models to predict the amount of DC government investment in a particular project. These include not just affordable housing projects, but other economic development investments including some related to small businesses, nonprofits, and arts and culture. 
 
-Notably, these investments are heavily right-skewed, with most investments under \$1.5M and a long tail reaching a maximum of over \$215M for one project. Due to this skew, I log-transform the project investment variable before building my predictive models. 
+As part of the modeling process, feature engineering was conducted and largely based on recommendations and techniques from Bradley Boehmke & Brandon Greenwell (2020).
+
+Notably, these investments are heavily right-skewed, with most investments under \$1.5M and a long tail reaching a maximum of over \$215M for one project. Due to this skew, I log-transform the project investment variable before building my predictive models. The stylized table below was produced by referencing a tutorial by Daniel D. Sjoberg, Michael Curry, Margie Hannum, Karissa Whiting, Emily C. Zabor (2020).
 
 ![Figure 8](/8-investment-hist.png)
 
@@ -62,7 +64,7 @@ As can be seen in the below visualization of missing values across the data set,
 
 I first train a K-Nearest Neighbor model, which outperforms a previous KNN model I conducted on just one of the data sets. These improvements are likely due to the additional data as well as additional preprocessing steps conducted. The root mean squared error term is not easily interpretable because it is in log-units, which will be reversed in a later step for further model evaluation. 
 
-I then train a Random Forest model to predict project investment. This model performs better than the KNN model based on a lower RMSE value. I also visualize the variable importance for the RF model, which shows that total affordable housing units, amount of Low Income Housing Tax Credit investment, units at 30% AMI, and the project funding source play the most important roles in the model. While the initial visualizations appeared to show that there was not much of a relationship between investment and affordable units or deeply affordable units, this predictive model relied heavily on these two variables suggesting the possibility of some relationship. 
+I then train a Random Forest model to predict project investment. The model implementation uses the `tidymodels` framework and was developed by referencing Bradley Boehmke & Brandon Greenwell (2020) and Hansjörg Plieninger (2020). This model performs better than the KNN model based on a lower RMSE value. I also visualize the variable importance for the RF model, which shows that total affordable housing units, amount of Low Income Housing Tax Credit investment, units at 30% AMI, and the project funding source play the most important roles in the model. While the initial visualizations appeared to show that there was not much of a relationship between investment and affordable units or deeply affordable units, this predictive model relied heavily on these two variables suggesting the possibility of some relationship. 
 
 ![Figure 11](/11-investment-vip.png)
 
@@ -76,11 +78,13 @@ Finally, I use the identified best model to make predictions on the testing data
 
 Similarly, I next produce a model to predict the number of affordable housing units produced by project. The number of affordable units per project is also right-skewed in the data with the majority of projects producing fewer than 60 units of affordable housing, but with a few producing over 500.  
 
+As with the previous model, feature engineering was conducted and largely based on recommendations and techniques from Bradley Boehmke & Brandon Greenwell (2020). The stylized table below was produced by referencing a tutorial by Daniel D. Sjoberg, Michael Curry, Margie Hannum, Karissa Whiting, Emily C. Zabor (2020).
+
 ![Figure 14](/14-unit-hist.png)
 
 ![Figure 15](/15-aff-units-table.png)
 
-I first train multiple specifications of a K-Nearest Neighbor model. I then train a number of specifications of a Random Forest model, which signficantly outperforms the KNN model. Again, the root mean squared error term is not initially meaningfully interpretable because of the log transformation of the outcome variable. Total bedroom, units at 81% AMI, and units at 51-80% AMI are the most important variables for the model. This is unsurprising as these all directly contribute to the total affordable units in a project or are very closely correlated. 
+I first train multiple specifications of a K-Nearest Neighbor model. I then train a number of specifications of a Random Forest model, which signficantly outperforms the KNN model. Similarly, the model implementation uses the `tidymodels` framework and was developed by referencing Bradley Boehmke & Brandon Greenwell (2020) and Hansjörg Plieninger (2020). Again, the root mean squared error term is not initially meaningfully interpretable because of the log transformation of the outcome variable. Total bedroom, units at 81% AMI, and units at 51-80% AMI are the most important variables for the model. This is unsurprising as these all directly contribute to the total affordable units in a project or are very closely correlated. 
 
 ![Figure 16](/16-affordable-vip.png)
 
@@ -91,4 +95,12 @@ The model does somewhat better at predicting projects in the middle of the distr
 ![Figure 17](/17-aff-error.png)
 
 ![Figure 18](/18-aff-error-dist.png)
+
+## References
+
+Bradley Boehmke & Brandon Greenwell. 2020. Hands-on Machine Learning with R. https://bradleyboehmke.github.io/HOML/index.html.
+
+Daniel D. Sjoberg, Michael Curry, Margie Hannum, Karissa Whiting, Emily C. Zabor. 2020. http://www.danieldsjoberg.com/gtsummary/articles/tbl_summary.html.
+
+Hansjörg Plieninger. 2020. Tutorial on Tidymodels for Machine Learning. https://hansjoerg.me/2020/02/09/tidymodels-for-machine-learning/.
 
